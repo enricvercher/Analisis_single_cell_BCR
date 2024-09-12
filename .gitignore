@@ -1,0 +1,24 @@
+# Ignore working folders
+demultiplexed_samples/
+bamtofastq/
+final_analysis_cellmulti/
+VDJ_immcantation/
+02_VDJ_immcantation
+00_final_analysis_cellmulti/
+03_Analisis_scRNAseq_python/
+#multi_config_CSV/
+Scripts/
+#Analisis_sc_TFM.ipynb
+#scripts_auxiliares_jupyter/
+Contenedores/
+000_Cellranger_8/
+# Scripts_cellranger_7/
+# Scripts_cellranger_8/
+03_Analisis_scRNAseq_python/
+0_bamtofastq/
+# Ignore working files
+__demultiplexed_samples*
+
+
+# Any SLUM file
+slurm*.out
