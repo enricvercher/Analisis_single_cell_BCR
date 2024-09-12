@@ -1,0 +1,1851 @@
+---
+title: "bind_seurat_VDJ"
+author: "Enric Vercher"
+date: "2023-11-13"
+output: html_document
+---
+
+```{r}
+suppressPackageStartupMessages(library(airr))
+suppressPackageStartupMessages(library(alakazam))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(dowser))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(scoper))
+suppressPackageStartupMessages(library(shazam))
+suppressPackageStartupMessages(library(tigger))
+suppressPackageStartupMessages(library(slingshot))
+```
+
+```{r}
+# Load libraries
+suppressPackageStartupMessages({
+  library(parallel)
+  library(Seurat)
+  library(ggplot2)
+  library(tidyverse)
+  library(patchwork)
+  library(DoubletFinder)
+  library(sctransform)
+  library(glmGamPoi)
+  library(SeuratDisk)
+  library(SeuratData)
+  library(scales)
+  library(scRepertoire)
+  library(knitr)
+  library(scCustomize)
+  library(qs)
+  library(SingleCellExperiment)
+})
+```
+
+# Cargamos los archivos de los clones proveninentes del nextflow AIRR análisis
+
+```{r}
+# Cargar el archivo mouse_44__clone-pass.tsv y nombrarlo mouse_44_clones
+mouse_44_clones <- read.table("mouse_44__clone-pass.tsv", header = TRUE, sep = "\t")
+
+# Cargar el archivo mouse_45__clone-pass.tsv y nombrarlo mouse_45_clones
+mouse_45_clones <- read.table("mouse_45__clone-pass.tsv", header = TRUE, sep = "\t")
+
+# Cargar el archivo mouse_48__clone-pass.tsv y nombrarlo mouse_48_clones
+mouse_48_clones <- read.table("mouse_48__clone-pass.tsv", header = TRUE, sep = "\t")
+
+# Cargar el archivo mouse_49__clone-pass.tsv y nombrarlo mouse_49_clones
+mouse_49_clones <- read.table("mouse_49__clone-pass.tsv", header = TRUE, sep = "\t")
+
+# Cargar el archivo mouse_50__clone-pass.tsv y nombrarlo mouse_50_clones
+mouse_50_clones <- read.table("mouse_50__clone-pass.tsv", header = TRUE, sep = "\t")
+
+# Cargar el archivo mouse_52__clone-pass.tsv y nombrarlo mouse_52_clones
+mouse_52_clones <- read.table("mouse_52__clone-pass.tsv", header = TRUE, sep = "\t")
+```
+
+
+# Adaptamos los cell_id para que sean igual que en los datos de transcriptómica
+
+```{r}
+# Función para cambiar los nombres de las columnas "cell_id" y quitar los dos últimos caracteres
+transform_cell_id <- function(data, subject_id) {
+  data$cell_id <- paste0("m.", gsub("mouse_", "", subject_id), "_", substr(data$cell_id, 1, nchar(data$cell_id) - 2))
+  return(data)
+}
+
+# Ejemplo de uso:
+transform_cell_id <- function(data, subject_id) {
+  data$cell_id <- paste0("m.", gsub("mouse_", "", subject_id), "_", substr(data$cell_id, 1, nchar(data$cell_id) - 2))
+  return(data)
+}
+
+# Aplicar la función a cada conjunto de datos
+mouse_44_clones <- transform_cell_id(mouse_44_clones, "mouse_44")
+mouse_45_clones <- transform_cell_id(mouse_45_clones, "mouse_45")
+mouse_48_clones <- transform_cell_id(mouse_48_clones, "mouse_48")
+mouse_49_clones <- transform_cell_id(mouse_49_clones, "mouse_49")
+mouse_50_clones <- transform_cell_id(mouse_50_clones, "mouse_50")
+mouse_52_clones <- transform_cell_id(mouse_52_clones, "mouse_52")
+
+```
+
+Guardamos un ejemplo para Sandra:
+
+```{r}
+library(openxlsx)
+# Guardar "mouse_44_clones" en un archivo Excel
+write.xlsx(mouse_44_clones, "mouse_44_clones.xlsx")
+
+# Guardar "mouse_45_clones" en otro archivo Excel
+write.xlsx(mouse_45_clones, "mouse_45_clones.xlsx")
+```
+
+# Unión de los 6 ratones:
+
+```{r}
+combined_data <- bind_rows(mouse_44_clones, mouse_45_clones, mouse_48_clones, 
+                           mouse_49_clones, mouse_50_clones, mouse_52_clones)
+```
+
+```{r}
+# Guardar "mouse_45_clones" en otro archivo Excel
+write.xlsx(combined_data, "all_mice_combined.xlsx")
+```
+
+# Leemos los datos del scRNA-seq filtrados por SoupX
+
+```{r}
+# read in the data
+gex_obj_enric <- readRDS(file="C:/Users/d940401/Desktop/Analisis_Seurat/scRNA_filtrado_soupx.rds")
+# bcr_data_correct <- readRDS(file.path("C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/05_VDJ_scRNA_Seurat/all_mice_BCR_correct.rds"))
+
+gex_obj_enric_df <- as.data.frame(gex_obj_enric@meta.data)
+```
+
+```{r}
+# Crear un marco de datos con las celdas del objeto GEX
+new_meta_cols <- data.frame(cell_id = Cells(gex_obj_enric))
+
+# Seleccionar columnas de los datos de BCR
+combined_data <- combined_data %>%
+  dplyr::select(cell_id, locus, light_only_cell, clone_size_count, clone_size_freq, mu_freq, c_call, isotype, junction_aa, clone_id) %>%
+  dplyr::rename(
+    bcr_mu_freq = mu_freq,
+    bcr_isotype_allele = c_call,
+    bcr_aa = junction_aa
+  ) %>%
+  # Convertir clone_id a character para evitar problemas en summarise
+  mutate(clone_id = as.character(clone_id))
+```
+
+```{r}
+# Añadir columnas separadas para cadenas ligeras y pesadas
+combined_data <- combined_data %>%
+  mutate(
+    bcr_mu_freq_H = ifelse(locus == "IGH", bcr_mu_freq, NA),
+    bcr_aa_H = ifelse(locus == "IGH", bcr_aa, NA),
+    bcr_isotype_allele_H = ifelse(locus == "IGH", bcr_isotype_allele, NA),
+    bcr_mu_freq_K = ifelse(locus == "IGK", bcr_mu_freq, NA),
+    bcr_aa_K = ifelse(locus == "IGK", bcr_aa, NA),
+    bcr_isotype_allele_K = ifelse(locus == "IGK", bcr_isotype_allele, NA),
+    bcr_mu_freq_L = ifelse(locus == "IGL", bcr_mu_freq, NA),
+    bcr_aa_L = ifelse(locus == "IGL", bcr_aa, NA),
+    bcr_isotype_allele_L = ifelse(locus == "IGL", bcr_isotype_allele, NA)
+  )
+
+# Filtrar las observaciones combinadas para mantener solo una fila por cell_id
+filtered_combined_data <- combined_data %>%
+  group_by(cell_id) %>%
+  summarise(
+    bcr_mu_freq_H = coalesce(dplyr::first(bcr_mu_freq_H[!is.na(bcr_mu_freq_H)]), NA_real_),
+    bcr_aa_H = coalesce(dplyr::first(bcr_aa_H[!is.na(bcr_aa_H)]), NA_character_),
+    bcr_isotype_allele_H = coalesce(dplyr::first(bcr_isotype_allele_H[!is.na(bcr_isotype_allele_H)]), NA_character_),
+    isotype = coalesce(dplyr::first(isotype[!is.na(isotype)]), NA_character_),
+    bcr_mu_freq_K = coalesce(dplyr::first(bcr_mu_freq_K[!is.na(bcr_mu_freq_K)]), NA_real_),
+    bcr_aa_K = coalesce(dplyr::first(bcr_aa_K[!is.na(bcr_aa_K)]), NA_character_),
+    bcr_isotype_allele_K = coalesce(dplyr::first(bcr_isotype_allele_K[!is.na(bcr_isotype_allele_K)]), NA_character_),
+    bcr_mu_freq_L = coalesce(dplyr::first(bcr_mu_freq_L[!is.na(bcr_mu_freq_L)]), NA_real_),
+    bcr_aa_L = coalesce(dplyr::first(bcr_aa_L[!is.na(bcr_aa_L)]), NA_character_),
+    bcr_isotype_allele_L = coalesce(dplyr::first(bcr_isotype_allele_L[!is.na(bcr_isotype_allele_L)]), NA_character_),
+    light_only_cell = coalesce(dplyr::first(light_only_cell), FALSE),  # Para columnas lógicas
+    clone_size_count = coalesce(dplyr::first(clone_size_count), NA_real_),
+    clone_size_freq = coalesce(dplyr::first(clone_size_freq), NA_real_),
+    clone_id = coalesce(dplyr::first(clone_id[!is.na(clone_id)]), NA_character_)
+  ) %>%
+  ungroup()
+
+# Verificar el número de filas después del ajuste
+filtered_combined_data <- filtered_combined_data %>%
+  select(cell_id, clone_id, clone_size_count, clone_size_freq, isotype, bcr_aa_H, bcr_aa_K, bcr_aa_L,
+         bcr_isotype_allele_K, bcr_isotype_allele_L, bcr_mu_freq_H, bcr_mu_freq_K, bcr_mu_freq_L,
+         light_only_cell)
+
+# Verificar el nuevo orden de las columnas
+filtered_combined_data <- filtered_combined_data %>%
+  select(-light_only_cell)
+
+# Mostrar nombres de las columnas para verificar el nuevo orden
+colnames(filtered_combined_data)
+```
+
+Parece que 774 LB tienen dos cadenas ligeras (a ojo)
+
+# Unión del GEX con el BCR-seq solo con el cell_id
+
+```{r}
+# Realizar un left join entre cell_id del objeto GEX y filtered_combined_data
+new_meta_cols <- left_join(data.frame(cell_id = Cells(gex_obj_enric)), filtered_combined_data, by = 'cell_id')
+
+# Integrar los datos de BCR con el objeto GEX
+for (colname in colnames(filtered_combined_data)) {
+   gex_obj_enric[[colname]] = new_meta_cols[[colname]]
+}
+
+# Definir la columna contains_bcr
+gex_obj_enric$contains_bcr <- !is.na(gex_obj_enric$bcr_aa_H)
+
+# Mostrar ejemplos de las nuevas columnas
+gex_obj_enric_filt_df <- as.data.frame(gex_obj_enric@meta.data)
+```
+
+```{r}
+# Crear la columna cell_id2 con los nombres de fila del metadata
+gex_obj_enric$cell_id2 <- rownames(gex_obj_enric@meta.data)
+
+# Comparar la columna cell_id con cell_id2
+matches <- gex_obj_enric$cell_id == gex_obj_enric$cell_id2
+
+# Contar los casos de coincidencia y no coincidencia
+num_matches <- sum(matches, na.rm = TRUE)
+num_mismatches <- sum(!matches, na.rm = TRUE)
+
+# Imprimir los resultados
+cat("Coincidencias:", num_matches, "\n")
+cat("No coincidencias:", num_mismatches, "\n")
+```
+
+```{r}
+table(gex_obj_enric@meta.data$contains_bcr)
+```
+```{r}
+gex_obj_enric_df <-as.data.frame(gex_obj_enric@meta.data)
+```
+
+# Salvamos el objeto para hacer el análisis transcriptómico tanto con como sin BCR
+
+```{r}
+saveRDS(gex_obj_enric, file="scRNA_con_BCR_nextflow.rds")
+```
+
+# Cargar el archivo del BCR con los datos del transcriptoma filtrados
+
+```{r}
+data.RNA.BCR.filt <- readRDS(file="C:/Users/d940401/Desktop/Analisis_Seurat/scRNA_con_BCR_para_repertorio.nextflow.rds")
+data.RNA.BCR.filt.wo.dob <- readRDS(file="C:/Users/d940401/Desktop/Analisis_Seurat/scRNA_con_BCR_para_repertorio.nf.sin-dobletes.rds")
+data.RNA.BCR.filt_df <- as.data.frame(data.RNA.BCR.filt@meta.data)
+data.RNA.BCR.filt.wo.dob_df<- as.data.frame(data.RNA.BCR.filt.wo.dob@meta.data)
+```
+
+# Highlight BCR cells in the GEX UMAP
+
+
+```{r}
+highlighted_cells <- Cells(data.RNA.BCR.filt)[which(data.RNA.BCR.filt$contains_bcr)]
+
+options(repr.plot.width = 7, repr.plot.height = 6)
+UMAPPlot(object = data.RNA.BCR.filt, cells.highlight = highlighted_cells, 
+         label = TRUE, label.size = 6, pt.size = 0.7) +
+scale_color_manual(labels = c("BCR", "no-BCR"), values = c("green", "red"))
+```
+```{r}
+highlighted_cells <- Cells(data.RNA.BCR.filt.wo.dob)[which(data.RNA.BCR.filt.wo.dob$contains_bcr)]
+
+options(repr.plot.width = 7, repr.plot.height = 6)
+UMAPPlot(object = data.RNA.BCR.filt.wo.dob, cells.highlight = highlighted_cells, 
+         label = TRUE, label.size = 6, pt.size = 0.7) +
+scale_color_manual(labels = c("BCR", "no-BCR"), values = c("green", "red"))
+```
+
+# Add GEX information to the BCR data
+
+```{r}
+# select columns from the GEX data
+gex_data_selected <- data.frame(cell_id = Cells(data.RNA.BCR.filt),
+                                gex_umap_1 = data.RNA.BCR.filt@reductions$umap@cell.embeddings[,1],
+                                gex_umap_2 = data.RNA.BCR.filt@reductions$umap@cell.embeddings[,2],
+                                gex_annotation = as.character(Idents(data.RNA.BCR.filt)))
+
+# integrate GEX data with the BCR data
+bcr_gex_data <- left_join(data.RNA.BCR.filt_df, gex_data_selected, by = 'cell_id')
+dim(bcr_gex_data)
+```
+
+```{r}
+# keep BCR cells has matched cells from GEX data
+#esto para el screpertoire
+bcr_sin_transcriptoma <- filter(bcr_gex_data,is.na(gex_annotation))
+#esto para estos analisis:
+bcr_gex_data <- filter(bcr_gex_data, !is.na(gex_annotation))
+dim(bcr_sin_transcriptoma)
+dim(bcr_gex_data)
+```
+# Add GEX information to the BCR data sin dobletes
+
+```{r}
+# select columns from the GEX data
+gex_data_selected_wo_dob <- data.frame(cell_id = Cells(data.RNA.BCR.filt.wo.dob),
+                                gex_umap_1_wo_d = data.RNA.BCR.filt.wo.dob@reductions$umap@cell.embeddings[,1],
+                                gex_umap_2_wo_d = data.RNA.BCR.filt.wo.dob@reductions$umap@cell.embeddings[,2],
+                                gex_annotation_wo_d = as.character(Idents(data.RNA.BCR.filt.wo.dob)))
+
+# integrate GEX data with the BCR data
+bcr_gex_data_wo_dob <- left_join(data.RNA.BCR.filt.wo.dob_df, gex_data_selected_wo_dob, by = 'cell_id')
+dim(bcr_gex_data_wo_dob)
+```
+
+```{r}
+# keep BCR cells has matched cells from GEX data
+#esto para el screpertoire
+bcr_sin_transcriptoma_wo_dob <- filter(bcr_gex_data_wo_dob,is.na(gex_annotation_wo_d))
+bcr_sin_transcriptoma_wo_dob
+#esto para estos analisis:
+bcr_gex_data_wo_dob <- filter(bcr_gex_data_wo_dob, !is.na(gex_annotation_wo_d))
+dim(bcr_sin_transcriptoma_wo_dob)
+dim(bcr_gex_data_wo_dob)
+```
+
+# Identify GEX clusters in the BCR UMAP
+
+```{r}
+col_anno = c(
+   "0"="dodgerblue2", "1"="firebrick2", "2"="seagreen",
+   "3"="darkgoldenrod2", "4"="plum2", "5"="black", "6"="brown",
+   "7"="yellow", "8"="blue", "9"="red", "10"="grey")
+
+options(repr.plot.width = 7, repr.plot.height = 6)
+ggplot() + geom_point(data = bcr_gex_data, aes(x = gex_umap_1, y = gex_umap_2, color = gex_annotation)) +
+          scale_colour_manual(values = col_anno) + theme_bw()
+```
+# Identify GEX clusters in the BCR UMAP wo doublets
+
+```{r}
+col_anno = c(
+   "0"="dodgerblue2", "1"="firebrick2", "2"="seagreen",
+   "3"="darkgoldenrod2", "4"="plum2", "5"="black", "6"="brown",
+   "7"="yellow", "8"="blue", "9"="red", "10"="grey")
+
+options(repr.plot.width = 7, repr.plot.height = 6)
+ggplot() + geom_point(data = bcr_gex_data_wo_dob, aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = gex_annotation_wo_d)) +
+          scale_colour_manual(values = col_anno) + theme_bw()
+```
+
+# Reasignamos el clone_id ya que eliminamos dobletes.
+
+```{r}
+library(dplyr)
+
+# Crear la nueva columna clone_size_count_wo_dob
+bcr_gex_data_wo_dob <- bcr_gex_data_wo_dob %>%
+  group_by(orig.ident, clone_id) %>%
+  mutate(clone_size_count_wo_dob = n()) %>%
+  ungroup()
+
+# Reorganizar columnas para insertar clone_size_count_wo_dob entre clone_id y clone_size_count
+bcr_gex_data_wo_dob <- bcr_gex_data_wo_dob %>%
+  select(1:7, clone_size_count_wo_dob, everything())
+
+```
+
+# Clonotype study
+
+## Unique clonotypes per mouse
+
+```{r}
+library(dplyr)
+# Add a new column 'mouse' based on the 'cell_id' column
+bcr_gex_data <- bcr_gex_data %>%
+  mutate(mouse = case_when(
+    grepl("^m.44_", cell_id) ~ "mouse_44",
+    grepl("^m.45_", cell_id) ~ "mouse_45",
+    grepl("^m.48_", cell_id) ~ "mouse_48",
+    grepl("^m.49_", cell_id) ~ "mouse_49",
+    grepl("^m.50_", cell_id) ~ "mouse_50",
+    grepl("^m.52_", cell_id) ~ "mouse_52",
+    # Add more conditions here for other mice
+    TRUE ~ "other"  # This will be used for cell_id that don't match any of the above conditions
+  ))
+```
+
+
+```{r}
+total_clonotypes <- bcr_gex_data %>%
+  group_by(mouse) %>%
+  summarise(total_clonotypes = n())
+
+print(total_clonotypes)
+```
+
+```{r}
+library(dplyr)
+
+# Contar el total de clonotipos en cada ratón
+total_clonotypes <- bcr_gex_data %>%
+  group_by(mouse) %>%
+  summarise(total_clonotypes = n())
+
+# Contar el total de clonotipos con tamaño 1 en cada ratón
+single_size_clonotypes <- bcr_gex_data %>%
+  group_by(mouse) %>%
+  summarise(single_size_clonotypes = sum(clone_size_count == 1))
+
+# Calcular la proporción de clonotipos únicos con tamaño 1
+unique_clonotypes_summary <- total_clonotypes %>%
+  left_join(single_size_clonotypes, by = "mouse") %>%
+  mutate(prop = single_size_clonotypes / total_clonotypes)
+
+# Seleccionar solo las columnas requeridas
+unique_clonotypes_summary <- unique_clonotypes_summary %>%
+  select(mouse, total_clonotypes, single_size_clonotypes, prop)
+
+# Imprimir el resultado
+print(unique_clonotypes_summary)
+
+```
+
+with screpertoire: 663 544  189  823 1822 1113
+
+```{r}
+(663-654) + (544-527) + (189-184) + (823-829) + (1822-1791) + (1113-1146)
+```
+
+Hay 23 que en el immcantation. esto al poner combineBCR que el removeNA=TRUE
+
+# Clonotype study wo doublets
+
+## Uniqe clonotypes per mouse wo doublets
+
+```{r}
+library(dplyr)
+# Add a new column 'mouse' based on the 'cell_id' column
+bcr_gex_data_wo_dob <- bcr_gex_data_wo_dob %>%
+  mutate(mouse = case_when(
+    grepl("^m.44_", cell_id) ~ "mouse_44",
+    grepl("^m.45_", cell_id) ~ "mouse_45",
+    grepl("^m.48_", cell_id) ~ "mouse_48",
+    grepl("^m.49_", cell_id) ~ "mouse_49",
+    grepl("^m.50_", cell_id) ~ "mouse_50",
+    grepl("^m.52_", cell_id) ~ "mouse_52",
+    # Add more conditions here for other mice
+    TRUE ~ "other"  # This will be used for cell_id that don't match any of the above conditions
+  ))
+```
+
+
+```{r}
+total_clonotypes <- bcr_gex_data_wo_dob %>%
+  group_by(mouse) %>%
+  summarise(total_clonotypes = n())
+
+print(total_clonotypes)
+```
+
+```{r}
+# Contar el total de clonotipos en cada ratón
+total_clonotypes <- bcr_gex_data_wo_dob %>%
+  group_by(orig.ident) %>%
+  summarise(total_clonotypes = n())
+
+# Contar el total de clonotipos con tamaño 1 en cada ratón
+single_size_clonotypes <- bcr_gex_data_wo_dob %>%
+  group_by(orig.ident) %>%
+  summarise(single_size_clonotypes = sum(clone_size_count_wo_dob == 1))
+
+# Calcular la proporción de clonotipos únicos con tamaño 1
+unique_clonotypes_summary <- total_clonotypes %>%
+  left_join(single_size_clonotypes, by = "orig.ident") %>%
+  mutate(prop = single_size_clonotypes / total_clonotypes)
+
+# Seleccionar solo las columnas requeridas
+unique_clonotypes_summary <- unique_clonotypes_summary %>%
+  select(orig.ident, total_clonotypes, single_size_clonotypes, prop)
+
+# Imprimir el resultado
+print(unique_clonotypes_summary)
+```
+
+# Estudio del cambio de isotipo con doublets
+
+creates a new column isotype that categorizes or groups c_call values into broader isotype categories (IgG, IgA, IgD, IgM) based on specific conditions you've defined. 
+
+```{r}
+options(repr.plot.width = 16, repr.plot.height = 4)
+bcr_gex_data <- bcr_gex_data %>% 
+  mutate(isotype_2 = case_when(
+    isotype %in% c("IGHG1", "IGHG2B", "IGHG2C","IGHG2A", "IGHG3") ~ "IgG",
+    isotype == "IGHA" ~ "IgA",
+    isotype == "IGHD" ~ "IgD",
+    isotype == "IGHM" ~ "IgM",
+    TRUE ~ isotype
+  ))
+```
+
+```{r}
+#write.table(bcr_gex_data, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/05_VDJ_scRNA_Seurat/BCR_object_mas_Seurat_info.tsv", sep = "\t", row.names = FALSE)
+```
+
+```{r}
+UMAPPlot(data.RNA.BCR.filt, label= T)
+```
+
+```{r}
+# Convert 'isotype_2' to factor with specified levels
+bcr_gex_data$isotype_2 <- factor(bcr_gex_data$isotype_2, levels = c("IgA", "IgG", "IgD", "IgM", "NA"))
+
+# Define the color palette
+colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#47039FFF", 
+              "#7301A8FF", "#9C179EFF", "#BD3786FF", "#D8576BFF",
+              "#ED7953FF","#FA9E3BFF", "#FDC926FF", "#F0F921FF")))
+
+
+ggplot(bcr_gex_data, aes(x = gex_umap_1, y = gex_umap_2, color = isotype_2)) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = colorblind_vector(length(unique(bcr_gex_data$isotype_2))), na.value = "gray") +
+  theme(panel.background = element_rect(fill = "white"), axis.line = element_line(color = "black"))
+```
+
+```{r}
+library(ggplot2)
+
+# Define the color palette
+colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#47039FFF", 
+              "#7301A8FF", "#9C179EFF", "#BD3786FF", "#D8576BFF",
+              "#ED7953FF","#FA9E3BFF", "#FDC926FF", "#F0F921FF")))
+
+# Loop through each mouse identifier and create a separate plot for each
+for (mouse_id in unique(bcr_gex_data$mouse)) {
+  # Subset data for the current mouse
+  mouse_data <- subset(bcr_gex_data, mouse == mouse_id)
+  
+  # Create a plot for the current mouse
+  plot <- ggplot(mouse_data, aes(x = gex_umap_1, y = gex_umap_2, color = isotype_2)) +
+    geom_point(size = 1.5) +
+    scale_color_manual(values = colorblind_vector(length(unique(bcr_gex_data$isotype_2))), na.value = "gray") +
+    theme(panel.background = element_rect(fill = "white"), axis.line = element_line(color = "black")) +
+    ggtitle(paste("Mouse:", mouse_id))  # Add title with mouse identifier
+  
+  # Print the plot
+  print(plot)
+}
+
+```
+
+```{r}
+ggplot(bcr_gex_data, aes(x = gex_umap_1, y = gex_umap_2)) +
+  geom_point(data = subset(bcr_gex_data, is.na(isotype_2)), color = "black", size = 1.5) +
+  theme(panel.background = element_rect(fill = "white"), axis.line = element_line(color = "black"))
+```
+
+```{r}
+# Calculate the number of cells per cluster
+cell_counts <- bcr_gex_data %>%
+  group_by(gex_annotation) %>%
+  summarise(count = n())
+print(cell_counts)
+```
+
+```{r}
+# Calculate the proportions of each isotype in each cluster
+proportions <- bcr_gex_data %>%
+  group_by(gex_annotation, isotype_2) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count))
+
+# Convert gex_annotation and isotype to factors and specify the levels
+
+# proportions$gex_annotation <- factor(proportions$gex_annotation, levels = c("C0-Naive/Naive activada", "C7-Naive", "C2-memoria (no-IS)", 
+#            "C3-Bact +PreMem", "C10-Breg(IS)", "C5-Bmemoria-IS", 
+#            "C1-Plasmblasto", "C4-Memoria+plasmablasto", 
+#            "C6-Bmemoria-IS", "C8-Plasmablasto-avanzado", "C9-Plasmatica"))
+           
+proportions$isotype_2 <- factor(proportions$isotype_2, levels = c("IgA", "IgG", "IgD", "IgM", "NA"))
+
+colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#47039FFF", 
+              "#7301A8FF", "#9C179EFF", "#BD3786FF", "#D8576BFF",
+              "#ED7953FF","#FA9E3BFF", "#FDC926FF", "#F0F921FF")))
+
+
+# Create a stacked bar plot
+ggplot(proportions, aes(x = gex_annotation, y = proportion, fill = isotype_2)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$isotype_2))), na.value="gray") +
+  ylab("Proportion") +
+  xlab("Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold"))
+```
+
+```{r}
+# Calcular las proporciones de cada isótopo en cada grupo, excluyendo las filas con NA en 'isotype_2'
+proportions <- bcr_gex_data %>%
+  filter(!is.na(isotype_2)) %>%  # Excluir filas con NA en 'isotype_2'
+  group_by(gex_annotation, isotype_2) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count))
+
+# Reordena los niveles del factor 'isotype_2' excluyendo 'NA'
+proportions$isotype_2 <- factor(proportions$isotype_2, levels = c("IgA", "IgG", "IgD", "IgM"))
+
+# Definir la paleta de colores para los diferentes isótopos
+colorblind_vector <- colorRampPalette(rev(c("#7301A8FF", 
+              "#BD3786FF", "#D8576BFF",
+             "#FA9E3BFF", "#F0F921FF")))
+
+# Crear el gráfico de barras apiladas
+ggplot(proportions, aes(x = gex_annotation, y = proportion, fill = isotype_2)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$isotype_2)))) +
+  ylab("Proportion") +
+  xlab("Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold"))
+
+```
+
+
+```{r}
+# Reordenar el factor gex_annotation en el orden deseado
+proportions$gex_annotation <- factor(proportions$gex_annotation, 
+                                     levels = c("7", "0", "2", "5", "1", "4", "6", "3", "8", "9", "10"))
+
+# Crear un gráfico de barras apiladas
+ggplot(proportions, aes(x = gex_annotation, y = proportion, fill = isotype_2)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$isotype_2))), na.value="gray") +
+  ylab("Proporción") +
+  xlab("Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold"))
+
+```
+
+```{r}
+# Calcular la proporción de cada isotipo en cada ratón
+proportion_by_mouse <- bcr_gex_data %>%
+  group_by(mouse, isotype) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count) * 100)  # Convertir a porcentaje
+
+# Crear el gráfico de barras
+ggplot(proportion_by_mouse, aes(x = factor(mouse), y = proportion, fill = isotype)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Mouse", y = "Percentage (%)", fill = "Isotype") +
+  scale_fill_manual(values = colorblind_vector(length(unique(bcr_gex_data$isotype))), na.value = "gray") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Proportion of Isotypes in Each Mouse")
+```
+
+```{r}
+# Crear el gráfico de barras con la paleta de colores definida
+ggplot(proportion_by_mouse, aes(x = factor(mouse), y = proportion, fill = isotype)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Mouse", y = "Percentage (%)", fill = "Isotype") +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportion_by_mouse$isotype)))) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Proportion of Isotypes in Each Mouse")
+```
+
+# Estudio del cambio de isotipo wo doublets
+
+creates a new column isotype that categorizes or groups c_call values into broader isotype categories (IgG, IgA, IgD, IgM) based on specific conditions you've defined. 
+
+```{r}
+options(repr.plot.width = 16, repr.plot.height = 4)
+bcr_gex_data_wo_dob <- bcr_gex_data_wo_dob %>% 
+  mutate(isotype_2 = case_when(
+    isotype %in% c("IGHG1", "IGHG2B", "IGHG2C","IGHG2A", "IGHG3") ~ "IgG",
+    isotype == "IGHA" ~ "IgA",
+    isotype == "IGHD" ~ "IgD",
+    isotype == "IGHM" ~ "IgM",
+    TRUE ~ isotype
+  ))
+```
+
+```{r}
+#write.table(bcr_gex_data, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/05_VDJ_scRNA_Seurat/BCR_object_mas_Seurat_info.tsv", sep = "\t", row.names = FALSE)
+```
+
+```{r}
+UMAPPlot(data.RNA.BCR.filt.wo.dob, label= T)
+```
+
+```{r}
+# Convert 'isotype_2' to factor with specified levels
+bcr_gex_data_wo_dob$isotype_2 <- factor(bcr_gex_data_wo_dob$isotype_2, levels = c("IgA", "IgG", "IgD", "IgM", "NA"))
+
+# Define the color palette
+colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#47039FFF", 
+              "#7301A8FF", "#9C179EFF", "#BD3786FF", "#D8576BFF",
+              "#ED7953FF","#FA9E3BFF", "#FDC926FF", "#F0F921FF")))
+
+
+ggplot(bcr_gex_data_wo_dob, aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = isotype_2)) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = colorblind_vector(length(unique(bcr_gex_data_wo_dob$isotype_2))), na.value = "gray") +
+  theme(panel.background = element_rect(fill = "white"), axis.line = element_line(color = "black"))
+```
+
+```{r}
+library(ggplot2)
+
+# Define the color palette
+colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#47039FFF", 
+              "#7301A8FF", "#9C179EFF", "#BD3786FF", "#D8576BFF",
+              "#ED7953FF","#FA9E3BFF", "#FDC926FF", "#F0F921FF")))
+
+# Loop through each mouse identifier and create a separate plot for each
+for (mouse_id in unique(bcr_gex_data_wo_dob$mouse)) {
+  # Subset data for the current mouse
+  mouse_data <- subset(bcr_gex_data_wo_dob, mouse == mouse_id)
+  
+  # Create a plot for the current mouse
+  plot <- ggplot(mouse_data, aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = isotype_2)) +
+    geom_point(size = 1.5) +
+    scale_color_manual(values = colorblind_vector(length(unique(bcr_gex_data_wo_dob$isotype_2))), na.value = "gray") +
+    theme(panel.background = element_rect(fill = "white"), axis.line = element_line(color = "black")) +
+    ggtitle(paste("Mouse:", mouse_id))  # Add title with mouse identifier
+  
+  # Print the plot
+  print(plot)
+}
+
+```
+
+```{r}
+ggplot(bcr_gex_data_wo_dob, aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d)) +
+  geom_point(data = subset(bcr_gex_data_wo_dob, is.na(isotype_2)), color = "black", size = 1.5) +
+  theme(panel.background = element_rect(fill = "white"), axis.line = element_line(color = "black"))
+```
+
+```{r}
+# Calculate the number of cells per cluster
+cell_counts <- bcr_gex_data_wo_dob %>%
+  group_by(gex_annotation_wo_d) %>%
+  summarise(count = n())
+print(cell_counts)
+```
+
+```{r}
+# Calculate the proportions of each isotype in each cluster
+proportions <- bcr_gex_data_wo_dob %>%
+  group_by(gex_annotation_wo_d, isotype_2) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count))
+
+# Convert gex_annotation and isotype to factors and specify the levels
+
+# proportions$gex_annotation <- factor(proportions$gex_annotation, levels = c("C0-Naive/Naive activada", "C7-Naive", "C2-memoria (no-IS)", 
+#            "C3-Bact +PreMem", "C10-Breg(IS)", "C5-Bmemoria-IS", 
+#            "C1-Plasmblasto", "C4-Memoria+plasmablasto", 
+#            "C6-Bmemoria-IS", "C8-Plasmablasto-avanzado", "C9-Plasmatica"))
+           
+proportions$isotype_2 <- factor(proportions$isotype_2, levels = c("IgA", "IgG", "IgD", "IgM", "NA"))
+
+colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#47039FFF", 
+              "#7301A8FF", "#9C179EFF", "#BD3786FF", "#D8576BFF",
+              "#ED7953FF","#FA9E3BFF", "#FDC926FF", "#F0F921FF")))
+
+
+# Create a stacked bar plot
+ggplot(proportions, aes(x = gex_annotation_wo_d, y = proportion, fill = isotype_2)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$isotype_2))), na.value="gray") +
+  ylab("Proportion") +
+  xlab("Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold"))
+```
+
+```{r}
+# Calcular las proporciones de cada isótopo en cada grupo, excluyendo las filas con NA en 'isotype_2'
+proportions <- bcr_gex_data_wo_dob %>%
+  filter(!is.na(isotype_2)) %>%  # Excluir filas con NA en 'isotype_2'
+  group_by(gex_annotation_wo_d, isotype_2) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count))
+
+# Reordena los niveles del factor 'isotype_2' excluyendo 'NA'
+proportions$isotype_2 <- factor(proportions$isotype_2, levels = c("IgA", "IgG", "IgD", "IgM"))
+
+# Definir la paleta de colores para los diferentes isótopos
+colorblind_vector <- colorRampPalette(rev(c("#7301A8FF", 
+              "#BD3786FF", "#D8576BFF",
+             "#FA9E3BFF", "#F0F921FF")))
+
+# Crear el gráfico de barras apiladas
+ggplot(proportions, aes(x = gex_annotation_wo_d, y = proportion, fill = isotype_2)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$isotype_2)))) +
+  ylab("Proportion") +
+  xlab("Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold"))
+
+```
+
+
+```{r}
+# Reordenar el factor gex_annotation en el orden deseado
+proportions$gex_annotation_wo_d <- factor(proportions$gex_annotation_wo_d, 
+                                     levels = c("0", "1", "2", "6", "5", "3", "4", "7", "8","9"))
+
+# Crear un gráfico de barras apiladas
+ggplot(proportions, aes(x = gex_annotation_wo_d, y = proportion, fill = isotype_2)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$isotype_2))), na.value="gray") +
+  ylab("Proporción") +
+  xlab("Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold"))
+
+```
+
+```{r}
+# Calcular la proporción de cada isotipo en cada ratón
+proportion_by_mouse <- bcr_gex_data_wo_dob %>%
+  group_by(mouse, isotype) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count) * 100)  # Convertir a porcentaje
+
+# Crear el gráfico de barras
+ggplot(proportion_by_mouse, aes(x = factor(mouse), y = proportion, fill = isotype)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Mouse", y = "Percentage (%)", fill = "Isotype") +
+  scale_fill_manual(values = colorblind_vector(length(unique(bcr_gex_data_wo_dob$isotype))), na.value = "gray") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Proportion of Isotypes in Each Mouse")
+```
+
+```{r}
+# Crear el gráfico de barras con la paleta de colores definida
+ggplot(proportion_by_mouse, aes(x = factor(mouse), y = proportion, fill = isotype)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Mouse", y = "Percentage (%)", fill = "Isotype") +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportion_by_mouse$isotype)))) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Proportion of Isotypes in Each Mouse")
+```
+
+# Estudio de la SHM con los dobletes
+
+```{r}
+ggplot() + geom_point(data = filter(bcr_gex_data),aes(x = gex_umap_1, y = gex_umap_2, color = bcr_mu_freq_H), size = 1) +
+  scale_colour_gradient(trans = 'pseudo_log', low = "lightblue", high = "darkblue") +   
+  theme(panel.background = element_rect(fill = "white"),axis.line = element_line(color = "black"))
+```
+
+```{r}
+ggplot() + geom_point(data = filter(bcr_gex_data),aes(x = gex_umap_1, y = gex_umap_2, color = bcr_mu_freq_L), size = 1) +
+  scale_colour_gradient(trans = 'pseudo_log', low = "lightblue", high = "darkblue") +   
+  theme(panel.background = element_rect(fill = "white"),axis.line = element_line(color = "black"))
+```
+
+
+```{r}
+# Reorder gex_annotation according to the specified order
+bcr_gex_data$gex_annotation <- factor(bcr_gex_data$gex_annotation, levels =c("7", "0", "2", "5", "1", "4", "6", "3", "8", "9", "10"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data$log_mu_freq <- log(bcr_gex_data$bcr_mu_freq_H + 1)  
+
+# Crear el gráfico de caja
+ggplot(bcr_gex_data, aes(x = gex_annotation, y = log_mu_freq)) +
+  geom_boxplot(width = 0.7, fill = "white", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+```
+
+La mutacion en la cadena ligera parecen artefactos:
+
+```{r}
+# Reorder gex_annotation according to the specified order
+bcr_gex_data$gex_annotation <- factor(bcr_gex_data$gex_annotation, levels =c("7", "0", "2", "5", "1", "4", "6", "3", "8", "9", "10"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data$log_mu_freq <- log(bcr_gex_data$bcr_mu_freq_K + 1)  
+
+# Crear el gráfico de caja
+ggplot(bcr_gex_data, aes(x = gex_annotation, y = log_mu_freq)) +
+  geom_boxplot(width = 0.7, fill = "white", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+```
+
+```{r}
+library(ggplot2)
+
+# Reordenar gex_annotation según el orden especificado
+bcr_gex_data$gex_annotation <- factor(bcr_gex_data$gex_annotation, levels = c("0", "2", "6", "1", "5", "4", "7", "3", "9", "8","10"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data$log_mu_freq <- log(bcr_gex_data$bcr_mu_freq_H + 1)  
+
+# Crear el violin plot con boxplot
+ggplot(bcr_gex_data, aes(x = gex_annotation, y = log_mu_freq, fill = gex_annotation)) +
+  geom_violin(trim = FALSE) +
+  geom_boxplot(width = 0.1, fill = "white", color = "black", outlier.shape = NA) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+```
+
+
+```{r}
+# Calcular la proporción de cada isotipo en cada ratón
+proportion_by_mouse <- bcr_gex_data %>%
+  group_by(mouse, isotype_2) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count) * 100)  # Convertir a porcentaje
+
+# Calcular la media de mutación por isotipo
+mean_mutations <- bcr_gex_data %>%
+  group_by(isotype_2) %>%
+  summarise(mean_log_mu_freq = mean(log_mu_freq, na.rm = TRUE))
+
+
+# Crear el gráfico de barras con violin plot, puntos de media y puntos por clon
+ggplot(bcr_gex_data, aes(x = isotype_2, y = log_mu_freq, fill = isotype_2)) +
+  geom_violin(trim = FALSE, width = 0.8) +  # Ajusta el ancho aquí (por ejemplo, a 0.8)
+  geom_point(data = mean_mutations, aes(x = isotype_2, y = mean_log_mu_freq), color = "black", size = 3) +
+  geom_point(aes(x = isotype_2, y = log_mu_freq), color = "darkgray", alpha = 0.5, size = 1) +  # Puntos por clon
+  labs(x = "Isotype", y = "Log Mutation Frequency", fill = "Isotype") +
+  scale_fill_manual(values = colorblind_vector(length(unique(bcr_gex_data$isotype_2))), na.value = "gray") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Distribution of Log Mutation Frequency for Each Isotype")
+
+```
+
+# Estudio de la SHM sin dobletes
+
+## Cadena pesada
+
+```{r}
+ggplot() + geom_point(data = filter(bcr_gex_data_wo_dob),aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = bcr_mu_freq_H), size = 1) +
+  scale_colour_gradient(trans = 'pseudo_log', low = "lightblue", high = "darkblue") +   
+  theme(panel.background = element_rect(fill = "white"),axis.line = element_line(color = "black"))
+```
+
+```{r}
+# Reorder gex_annotation according to the specified order
+bcr_gex_data_wo_dob$gex_annotation_wo_d <- factor(bcr_gex_data_wo_dob$gex_annotation_wo_d, levels =c("0", "1", "2", "6", "5", "3", "4", "7", "8","9"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data_wo_dob$log_mu_freq <- log(bcr_gex_data_wo_dob$bcr_mu_freq_H + 1)  
+
+# Crear el gráfico de caja
+ggplot(bcr_gex_data_wo_dob, aes(x = gex_annotation_wo_d, y = log_mu_freq)) +
+  geom_boxplot(width = 0.7, fill = "white", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  ylim(0, 0.08) +  # Establecer el límite del eje y
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+```
+
+## Cadena ligera kappa (K)
+
+```{r}
+ggplot() + geom_point(data = filter(bcr_gex_data_wo_dob),aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = bcr_mu_freq_K), size = 1) +
+  scale_colour_gradient(trans = 'pseudo_log', low = "lightblue", high = "darkblue") +   
+  theme(panel.background = element_rect(fill = "white"),axis.line = element_line(color = "black"))
+```
+
+```{r}
+# Reorder gex_annotation according to the specified order
+bcr_gex_data_wo_dob$gex_annotation_wo_d <- factor(bcr_gex_data_wo_dob$gex_annotation_wo_d, levels =c("0", "1", "2", "6", "5", "3", "4", "7", "8","9"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data_wo_dob$log_mu_freq <- log(bcr_gex_data_wo_dob$bcr_mu_freq_K + 1)  
+
+# Crear el gráfico de caja
+ggplot(bcr_gex_data_wo_dob, aes(x = gex_annotation_wo_d, y = log_mu_freq)) +
+  geom_boxplot(width = 0.7, fill = "white", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+```
+
+```{r}
+# Reorder gex_annotation according to the specified order
+bcr_gex_data_wo_dob$gex_annotation_wo_d <- factor(bcr_gex_data_wo_dob$gex_annotation_wo_d, levels = c("0", "1", "2", "6", "5", "3", "4", "7", "8", "9"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data_wo_dob$log_mu_freq <- log(bcr_gex_data_wo_dob$bcr_mu_freq_K + 1)
+
+# Crear el gráfico de caja
+ggplot(bcr_gex_data_wo_dob, aes(x = gex_annotation_wo_d, y = log_mu_freq)) +
+  geom_boxplot(width = 0.7, fill = "white", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  ylim(0, 0.08) +  # Establecer el límite del eje y
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+
+```
+
+## Cadena ligera lambda (L)
+
+```{r}
+ggplot() + geom_point(data = filter(bcr_gex_data_wo_dob),aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = bcr_mu_freq_L), size = 1) +
+  scale_colour_gradient(trans = 'pseudo_log', low = "lightblue", high = "darkblue") +   
+  theme(panel.background = element_rect(fill = "white"),axis.line = element_line(color = "black"))
+```
+
+```{r}
+# Reorder gex_annotation according to the specified order
+bcr_gex_data_wo_dob$gex_annotation_wo_d <- factor(bcr_gex_data_wo_dob$gex_annotation_wo_d, levels =c("0", "1", "2", "6", "5", "3", "4", "7", "8","9"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data_wo_dob$log_mu_freq <- log(bcr_gex_data_wo_dob$bcr_mu_freq_L + 1)  
+
+# Crear el gráfico de caja
+ggplot(bcr_gex_data_wo_dob, aes(x = gex_annotation_wo_d, y = log_mu_freq)) +
+  geom_boxplot(width = 0.7, fill = "white", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+```
+
+## Otros análisis SHM
+
+```{r}
+library(ggplot2)
+
+# Reordenar gex_annotation según el orden especificado
+bcr_gex_data_wo_dob$gex_annotation_wo_d <- factor(bcr_gex_data_wo_dob$gex_annotation_wo_d, levels = c("0", "1", "2", "6", "5", "3", "4", "7", "8","9"))
+
+# Calcular el logaritmo de mu_freq evitando el logaritmo de 0
+bcr_gex_data_wo_dob$log_mu_freq <- log(bcr_gex_data_wo_dob$bcr_mu_freq_H + 1)  
+
+# Crear el violin plot con boxplot
+ggplot(bcr_gex_data_wo_dob, aes(x = gex_annotation_wo_d, y = log_mu_freq, fill = gex_annotation_wo_d)) +
+  geom_violin(trim = FALSE) +
+  geom_boxplot(width = 0.1, fill = "white", color = "black", outlier.shape = NA) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+  labs(x = "Cluster", y = "Log-Transformed Mutation Frequency") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.text.x = element_text(angle = 52, hjust = 1)
+  )
+```
+
+```{r}
+# Calcular la proporción de cada isotipo en cada ratón
+proportion_by_mouse <- bcr_gex_data_wo_dob %>%
+  group_by(mouse, isotype_2) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count) * 100)  # Convertir a porcentaje
+
+# Calcular la media de mutación por isotipo
+mean_mutations <- bcr_gex_data_wo_dob %>%
+  group_by(isotype_2) %>%
+  summarise(mean_log_mu_freq = mean(log_mu_freq, na.rm = TRUE))
+
+
+# Crear el gráfico de barras con violin plot, puntos de media y puntos por clon
+ggplot(bcr_gex_data_wo_dob, aes(x = isotype_2, y = log_mu_freq, fill = isotype_2)) +
+  geom_violin(trim = FALSE, width = 0.8) +  # Ajusta el ancho aquí (por ejemplo, a 0.8)
+  geom_point(data = mean_mutations, aes(x = isotype_2, y = mean_log_mu_freq), color = "black", size = 3) +
+  geom_point(aes(x = isotype_2, y = log_mu_freq), color = "darkgray", alpha = 0.5, size = 1) +  # Puntos por clon
+  labs(x = "Isotype", y = "Log Mutation Frequency", fill = "Isotype") +
+  scale_fill_manual(values = colorblind_vector(length(unique(bcr_gex_data$isotype_2))), na.value = "gray") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Distribution of Log Mutation Frequency for Each Isotype")
+```
+
+# Expansion de los clonotipos
+
+ESTE NO NOS SERVIRIA PORQUE EL CLONE_SIZE_COUNT ESTA HECHO POR RATON Y NO TIENE EN CUENTA SI HAY CLONES COMUNES COMPARTIDOS ENTRE RATONES, LOS PONES COMO SEPARADOS.
+SIN EMBARGO NOS HACE VER  AL HACERLO MÁS ADELANTE, QUE MUCHOS DE ESTOS LOS ACAPARA EL MOUSE 44 Y MOUSE 45 POR ESO NO VARÍA "tanto" PERO NO SE PUEDE TENER EN CUENTA.
+
+ALGUNOS CLONE_SIZE SE PIERDEN YA QUE NO TIENEN TRANSCRIPTOMA ASOCIADO.
+
+## Con los clone_size_count de cada ratón con dobletes.
+
+```{r}
+# Agrupar los datos por 'gex_annotation' y sumar el 'clone_size_count' para cada cluster
+cluster_totals <- bcr_gex_data %>%
+  group_by(gex_annotation) %>%
+  summarise(total_clone_size_count = sum(clone_size_count))
+
+# Clasificar cada clon en una categoría según su 'clone_size_count'
+bcr_gex_data <- mutate(bcr_gex_data,
+                       cloneType = cut(clone_size_count, 
+                                       breaks = c(0, 1, 5, 20, 100, 500),
+                                       labels = c("Single (0 < X <= 1)", "Small (1 < X <= 5)", 
+                                                  "Medium (5 < X <= 20)", "Large (20 < X <= 100)", 
+                                                  "Hyperexpanded (100 < X <= 500)"), 
+                                       include.lowest = TRUE))
+# Agrupar los datos por 'cloneType' y calcular los totales
+total_clones <- bcr_gex_data %>%
+  group_by(cloneType) %>%
+  summarise(total = sum(clone_size_count))
+
+# Calcular la proporción de cada tipo de clon en relación con el total de cada cluster
+proportions <- bcr_gex_data %>%
+  group_by(gex_annotation, cloneType) %>%
+  summarise(count = sum(clone_size_count)) %>%
+  ungroup() %>%
+  left_join(cluster_totals, by = "gex_annotation") %>%
+  mutate(proportion = count / total_clone_size_count)
+
+proportions$gex_annotation <- factor(proportions$gex_annotation,
+                                     levels = c("7", "0", "2", "5", "1", "4", "6", "3", "8", "9", "10"))
+
+# Definir la paleta de colores para los diferentes isótopos
+colorblind_vector <- colorRampPalette(rev(c("#7301A8FF", 
+              "#BD3786FF", "#D8576BFF",
+             "#FA9E3BFF", "#F0F921FF")))
+
+# Cambiar el orden de los niveles en cloneType
+proportions$cloneType <- factor(proportions$cloneType, levels = rev(levels(proportions$cloneType)))
+
+# Crear un gráfico de barras apiladas con el nuevo orden
+ggplot(proportions, aes(x = gex_annotation, y = proportion, fill = cloneType)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Cluster", y = "Proportion", fill = "Clone Type") +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$cloneType))), na.value = "gray") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold")) +
+  guides(fill = guide_legend(reverse = TRUE))  # Invertir el orden de la leyenda
+```
+
+
+## Con los clone_size_count wo doublets.
+
+```{r}
+# Agrupar los datos por 'gex_annotation' y sumar el 'clone_size_count' para cada cluster
+cluster_totals <- bcr_gex_data_wo_dob %>%
+  group_by(gex_annotation_wo_d) %>%
+  summarise(total_clone_size_count = sum(clone_size_count))
+
+# Clasificar cada clon en una categoría según su 'clone_size_count'
+bcr_gex_data_wo_dob <- mutate(bcr_gex_data_wo_dob,
+                       cloneType = cut(clone_size_count, 
+                                       breaks = c(0, 1, 5, 20, 100, 500),
+                                       labels = c("Single (0 < X <= 1)", "Small (1 < X <= 5)", 
+                                                  "Medium (5 < X <= 20)", "Large (20 < X <= 100)", 
+                                                  "Hyperexpanded (100 < X <= 500)"), 
+                                       include.lowest = TRUE))
+# Agrupar los datos por 'cloneType' y calcular los totales
+total_clones <- bcr_gex_data_wo_dob %>%
+  group_by(cloneType) %>%
+  summarise(total = sum(clone_size_count))
+
+# Calcular la proporción de cada tipo de clon en relación con el total de cada cluster
+proportions <- bcr_gex_data_wo_dob %>%
+  group_by(gex_annotation_wo_d, cloneType) %>%
+  summarise(count = sum(clone_size_count)) %>%
+  ungroup() %>%
+  left_join(cluster_totals, by = "gex_annotation_wo_d") %>%
+  mutate(proportion = count / total_clone_size_count)
+
+proportions$gex_annotation_wo_d <- factor(proportions$gex_annotation_wo_d,
+                                     levels = c("0", "1", "2", "6", "5", "3", "4", "7", "8","9"))
+
+# Definir la paleta de colores para los diferentes isótopos
+colorblind_vector <- colorRampPalette(rev(c("#7301A8FF", 
+              "#BD3786FF", "#D8576BFF",
+             "#FA9E3BFF", "#F0F921FF")))
+
+# Cambiar el orden de los niveles en cloneType
+proportions$cloneType <- factor(proportions$cloneType, levels = rev(levels(proportions$cloneType)))
+
+# Crear un gráfico de barras apiladas con el nuevo orden
+ggplot(proportions, aes(x = gex_annotation_wo_d, y = proportion, fill = cloneType)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Cluster", y = "Proportion", fill = "Clone Type") +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$cloneType))), na.value = "gray") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold")) +
+  guides(fill = guide_legend(reverse = TRUE))  # Invertir el orden de la leyenda
+```
+
+# Clone size con las nuevas asignaciones clonales
+
+```{r}
+# Agrupar los datos por 'gex_annotation_wo_d' y sumar el 'clone_size_count_wo_dob' para cada cluster
+cluster_totals <- bcr_gex_data_wo_dob %>%
+  group_by(gex_annotation_wo_d) %>%
+  summarise(total_clone_size_count_wo_dob = sum(clone_size_count_wo_dob))
+
+# Clasificar cada clon en una categoría según su 'clone_size_count_wo_dob'
+bcr_gex_data_wo_dob <- mutate(bcr_gex_data_wo_dob,
+                              cloneType = cut(clone_size_count_wo_dob, 
+                                              breaks = c(0, 1, 5, 20, 100, 500),
+                                              labels = c("Single (0 < X <= 1)", "Small (1 < X <= 5)", 
+                                                         "Medium (5 < X <= 20)", "Large (20 < X <= 100)", 
+                                                         "Hyperexpanded (100 < X <= 500)"), 
+                                              include.lowest = TRUE))
+
+# Agrupar los datos por 'cloneType' y calcular los totales
+total_clones <- bcr_gex_data_wo_dob %>%
+  group_by(cloneType) %>%
+  summarise(total = sum(clone_size_count_wo_dob))
+
+# Calcular la proporción de cada tipo de clon en relación con el total de cada cluster
+proportions <- bcr_gex_data_wo_dob %>%
+  group_by(gex_annotation_wo_d, cloneType) %>%
+  summarise(count = sum(clone_size_count_wo_dob)) %>%
+  ungroup() %>%
+  left_join(cluster_totals, by = "gex_annotation_wo_d") %>%
+  mutate(proportion = count / total_clone_size_count_wo_dob)
+
+proportions$gex_annotation_wo_d <- factor(proportions$gex_annotation_wo_d,
+                                          levels = c("0", "1", "2", "6", "5", "3", "4", "7", "8","9"))
+
+# Definir la paleta de colores para los diferentes isótopos
+colorblind_vector <- colorRampPalette(rev(c("#7301A8FF", 
+                                            "#BD3786FF", "#D8576BFF",
+                                            "#FA9E3BFF", "#F0F921FF")))
+
+# Cambiar el orden de los niveles en cloneType
+proportions$cloneType <- factor(proportions$cloneType, levels = rev(levels(proportions$cloneType)))
+
+# Crear un gráfico de barras apiladas con el nuevo orden
+ggplot(proportions, aes(x = gex_annotation_wo_d, y = proportion, fill = cloneType)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Cluster", y = "Proportion", fill = "Clone Type") +
+  scale_fill_manual(values = colorblind_vector(length(unique(proportions$cloneType))), na.value = "gray") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold")) +
+  guides(fill = guide_legend(reverse = TRUE))  # Invertir el orden de la leyenda
+
+```
+
+## Expansión clonal por raton.
+
+```{r}
+library(dplyr)
+
+# Supongamos que bcr_gex_data_wo_dob es tu dataframe inicial
+
+# Filtrar datos por cada ratón y crear bases de datos separadas
+bcr_gex_data_wo_dob_m44 <- bcr_gex_data_wo_dob %>% filter(orig.ident == "m.44")
+bcr_gex_data_wo_dob_m45 <- bcr_gex_data_wo_dob %>% filter(orig.ident == "m.45")
+bcr_gex_data_wo_dob_m48 <- bcr_gex_data_wo_dob %>% filter(orig.ident == "m.48")
+bcr_gex_data_wo_dob_m49 <- bcr_gex_data_wo_dob %>% filter(orig.ident == "m.49")
+bcr_gex_data_wo_dob_m50 <- bcr_gex_data_wo_dob %>% filter(orig.ident == "m.50")
+bcr_gex_data_wo_dob_m52 <- bcr_gex_data_wo_dob %>% filter(orig.ident == "m.52")
+
+# Imprimir las dimensiones de cada dataframe para confirmar que son diferentes
+print(dim(bcr_gex_data_wo_dob_m44))
+print(dim(bcr_gex_data_wo_dob_m45))
+print(dim(bcr_gex_data_wo_dob_m48))
+print(dim(bcr_gex_data_wo_dob_m49))
+print(dim(bcr_gex_data_wo_dob_m50))
+print(dim(bcr_gex_data_wo_dob_m52))
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Lista de dataframes
+mouse_data_list <- list(
+  "m.44" = bcr_gex_data_wo_dob_m44,
+  "m.45" = bcr_gex_data_wo_dob_m45,
+  "m.48" = bcr_gex_data_wo_dob_m48,
+  "m.49" = bcr_gex_data_wo_dob_m49,
+  "m.50" = bcr_gex_data_wo_dob_m50,
+  "m.52" = bcr_gex_data_wo_dob_m52
+)
+
+# Definir la paleta de colores fija para los diferentes tipos de clones
+colorblind_vector <- c("Single (0 < X <= 1)" = "#7301A8FF", 
+                       "Small (1 < X <= 5)" = "#BD3786FF", 
+                       "Medium (5 < X <= 20)" = "#FA9E3BFF", 
+                       "Large (20 < X <= 100)" = "#F0F921FF")
+
+# Crear una lista para almacenar los gráficos
+plots <- list()
+
+# Generar gráficos para cada ratón
+for (mouse in names(mouse_data_list)) {
+  mouse_data <- mouse_data_list[[mouse]]
+  
+  # Clasificar cada clon en una categoría según su 'clone_size_count'
+  mouse_data <- mouse_data %>%
+    mutate(cloneType = cut(clone_size_count_wo_dob, 
+                           breaks = c(0, 1, 5, 20, 100, 500),
+                           labels = c("Single (0 < X <= 1)", "Small (1 < X <= 5)", 
+                                      "Medium (5 < X <= 20)", "Large (20 < X <= 100)", 
+                                      "Hyperexpanded (100 < X <= 500)"), 
+                           include.lowest = TRUE))
+  
+  # Agrupar los datos por 'gex_annotation' y contar el número de clones para cada tipo en cada cluster
+  proportions <- mouse_data %>%
+    group_by(gex_annotation_wo_d, cloneType) %>%
+    summarise(count = n(), .groups = 'drop') %>%
+    group_by(gex_annotation_wo_d) %>%
+    mutate(total_count = sum(count),
+           proportion = count / total_count)
+  
+  proportions$gex_annotation_wo_d <- factor(proportions$gex_annotation_wo_d,
+                                            levels = c("0", "1", "2", "6", "5", "3", "4", "7", "8", "9"))
+  
+  # Cambiar el orden de los niveles en cloneType
+  proportions$cloneType <- factor(proportions$cloneType, levels = rev(levels(proportions$cloneType)))
+  
+  # Crear un gráfico de barras apiladas con el nuevo orden y añadir los números
+  p <- ggplot(proportions, aes(x = gex_annotation_wo_d, y = proportion, fill = cloneType)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+    labs(x = "Cluster", y = "Proportion", fill = "Clone Type") +
+    scale_fill_manual(values = colorblind_vector, na.value = "gray") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold")) +
+    guides(fill = guide_legend(reverse = TRUE)) +  # Invertir el orden de la leyenda
+    ggtitle(paste("Proportion of Clone Types by Cluster for", mouse))
+  
+  # Guardar el gráfico en la lista
+  plots[[mouse]] <- p
+}
+
+# Mostrar los gráficos
+for (p in plots) {
+  print(p)
+}
+
+```
+
+# Crear el UMAP de la clonalidad wo dobletes.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+
+# Supongamos que bcr_gex_data_wo_dob es tu dataframe inicial
+
+# Clasificar cada clon en una categoría según su 'clone_size_count_wo_dob'
+bcr_gex_data_wo_dob <- bcr_gex_data_wo_dob %>%
+  mutate(cloneType = cut(clone_size_count_wo_dob, 
+                         breaks = c(0, 1, 5, 20, 100),
+                         labels = c("Single (0 < X <= 1)", "Small (1 < X <= 5)", 
+                                    "Medium (5 < X <= 20)", "Large (20 < X <= 100)"), 
+                         include.lowest = TRUE))
+
+# Convert 'cloneType' to factor and set the levels
+bcr_gex_data_wo_dob$cloneType <- factor(bcr_gex_data_wo_dob$cloneType, 
+                                        levels = c("Single (0 < X <= 1)", 
+                                                   "Small (1 < X <= 5)", 
+                                                   "Medium (5 < X <= 20)", 
+                                                   "Large (20 < X <= 100)"))
+
+# Definir la paleta de colores para los diferentes tipos de clones
+colorblind_vector <- c("Single (0 < X <= 1)" = "#7301A8FF", 
+                       "Small (1 < X <= 5)" = "#BD3786FF", 
+                       "Medium (5 < X <= 20)" = "#FA9E3BFF", 
+                       "Large (20 < X <= 100)" = "#F0F921FF")
+
+# Crear el UMAP para clones de tipo "Single"
+umap_single <- ggplot(subset(bcr_gex_data_wo_dob, cloneType == "Single (0 < X <= 1)"), aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = cloneType)) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = colorblind_vector, na.value = "gray") +
+  labs(title = "UMAP of Single Clonal Type", x = "UMAP 1", y = "UMAP 2", color = "Clone Type") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), # Eliminar rejilla
+        panel.background = element_rect(fill = "white", color = "white"), 
+        axis.line = element_line(color = "black"),
+        axis.text = element_text(),
+        legend.title = element_text(),
+        legend.text = element_text()) +
+  guides(color = guide_legend(reverse = FALSE))
+
+# Crear el UMAP para clones de tipo "Small", "Medium" y "Large"
+umap_other <- ggplot(subset(bcr_gex_data_wo_dob, cloneType != "Single (0 < X <= 1)"), aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d, color = cloneType)) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = colorblind_vector, na.value = "gray") +
+  labs(title = "UMAP of Small, Medium, and Large Clonal Types", x = "UMAP 1", y = "UMAP 2", color = "Clone Type") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), # Eliminar rejilla
+        panel.background = element_rect(fill = "white", color = "white"), 
+        axis.line = element_line(color = "black"),
+        axis.text = element_text(),
+        legend.title = element_text(),
+        legend.text = element_text()) +
+  guides(color = guide_legend(reverse = FALSE))
+
+# Combinar los dos UMAPs uno al lado del otro
+combined_umap <- umap_single + umap_other
+
+# Mostrar los gráficos
+print(combined_umap)
+
+```
+
+
+# Analisis de los clones
+
+Eliminamos todos los singlets
+
+```{r}
+library(dplyr)
+
+# Filtrar datos por cada ratón y crear bases de datos separadas con clone_size_count_wo_dob >= 5
+bcr_gex_data_wo_dob_m44_clone_study <- bcr_gex_data_wo_dob_m44 %>%
+  filter(clone_size_count_wo_dob >= 5)
+
+bcr_gex_data_wo_dob_m45_clone_study <- bcr_gex_data_wo_dob_m45 %>%
+  filter(clone_size_count_wo_dob >= 5)
+
+bcr_gex_data_wo_dob_m48_clone_study <- bcr_gex_data_wo_dob_m48 %>%
+  filter(clone_size_count_wo_dob >= 5)
+
+bcr_gex_data_wo_dob_m49_clone_study <- bcr_gex_data_wo_dob_m49 %>%
+  filter(clone_size_count_wo_dob >= 5)
+
+bcr_gex_data_wo_dob_m50_clone_study <- bcr_gex_data_wo_dob_m50 %>%
+  filter(clone_size_count_wo_dob >= 5)
+
+bcr_gex_data_wo_dob_m52_clone_study <- bcr_gex_data_wo_dob_m52 %>%
+  filter(clone_size_count_wo_dob >= 5)
+
+# Imprimir las dimensiones de cada dataframe filtrado
+print(dim(bcr_gex_data_wo_dob_m44_clone_study))
+print(dim(bcr_gex_data_wo_dob_m45_clone_study))
+print(dim(bcr_gex_data_wo_dob_m48_clone_study))
+print(dim(bcr_gex_data_wo_dob_m49_clone_study))
+print(dim(bcr_gex_data_wo_dob_m50_clone_study))
+print(dim(bcr_gex_data_wo_dob_m52_clone_study))
+
+```
+
+
+Los que más tienen son el ratón 44, 45 y 50. Los otros 3 no tienen casi. No ha habido expansion clonal.
+
+```{r}
+# Filtrar dataframes
+ratones_clonales <- list(
+  "m.44" = bcr_gex_data_wo_dob_m44_clone_study,
+  "m.45" = bcr_gex_data_wo_dob_m45_clone_study,
+  "m.48" = bcr_gex_data_wo_dob_m48_clone_study,
+  "m.49" = bcr_gex_data_wo_dob_m49_clone_study,
+  "m.50" = bcr_gex_data_wo_dob_m50_clone_study
+)
+
+# Crear una lista para almacenar los gráficos
+plots <- list()
+
+# Definir la paleta de colores para los diferentes isótopos
+colorblind_vector <- c("IgA" = "#F0F921FF", "IgG" = "#FA9E3BFF", "IgD" = "#D8576BFF", "IgM" = "#7301A8FF")
+
+# Generar gráficos para cada ratón
+for (mouse in names(ratones_clonales)) {
+  mouse_data <- ratones_clonales[[mouse]]
+  
+  # Calcular la media de SHM (bcr_mu_freq_H) para cada clone_id
+  shm_means <- mouse_data %>%
+    group_by(clone_id) %>%
+    summarise(mean_shm = mean(bcr_mu_freq_H, na.rm = TRUE)) %>%
+    arrange(desc(mean_shm))
+  
+  # Ordenar los clone_id según la media de SHM
+  mouse_data$clone_id <- factor(mouse_data$clone_id, levels = shm_means$clone_id)
+  
+  # Filtrar NA en isotype_2
+  mouse_data <- mouse_data %>% filter(!is.na(isotype_2))
+  
+  # Calcular las proporciones de cada isótopo en cada clone_id
+  proportions <- mouse_data %>%
+    group_by(clone_id, isotype_2) %>%
+    summarise(count = n(), .groups = 'drop') %>%
+    group_by(clone_id) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  # Reordena los niveles del factor 'isotype_2'
+  proportions$isotype_2 <- factor(proportions$isotype_2, levels = c("IgA", "IgG", "IgD", "IgM"))
+
+  # Crear el gráfico de barras apiladas para cada ratón
+  p <- ggplot(proportions, aes(x = clone_id, y = proportion, fill = isotype_2)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    geom_text(aes(label = ifelse(is.na(count), "", count)), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+    scale_fill_manual(values = colorblind_vector) +
+    ylab("Proportion") +
+    xlab("Clone ID") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 53, hjust = 1)) +
+    ggtitle(paste("Proportion of Isotypes by Clone ID for", mouse)) +
+    guides(fill = guide_legend(na.translate = FALSE))  # Excluir NA de la leyenda
+  
+  # Guardar el gráfico en la lista
+  plots[[mouse]] <- p
+}
+
+# Mostrar los gráficos
+for (p in plots) {
+  print(p)
+}
+
+```
+
+Estan ordenados de más a menos.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Filtrar dataframes
+ratones_clonales <- list(
+  "m.44" = bcr_gex_data_wo_dob_m44_clone_study,
+  "m.45" = bcr_gex_data_wo_dob_m45_clone_study,
+  "m.48" = bcr_gex_data_wo_dob_m48_clone_study,
+  "m.49" = bcr_gex_data_wo_dob_m49_clone_study,
+  "m.50" = bcr_gex_data_wo_dob_m50_clone_study
+)
+
+# Crear una lista para almacenar los gráficos
+plots <- list()
+
+# Generar gráficos para cada ratón
+for (mouse in names(ratones_clonales)) {
+  mouse_data <- ratones_clonales[[mouse]]
+  
+  # Calcular la media de SHM (bcr_mu_freq_H) para cada clone_id
+  shm_means <- mouse_data %>%
+    group_by(clone_id) %>%
+    summarise(mean_shm = mean(bcr_mu_freq_H, na.rm = TRUE)) %>%
+    arrange(desc(mean_shm))
+  
+  # Ordenar los clone_id según la media de SHM
+  mouse_data$clone_id <- factor(mouse_data$clone_id, levels = shm_means$clone_id)
+  
+  # Calcular las proporciones de cada clúster en cada clone_id
+  proportions <- mouse_data %>%
+    group_by(clone_id, gex_annotation_wo_d) %>%
+    summarise(count = n(), .groups = 'drop') %>%
+    group_by(clone_id) %>%
+    mutate(proportion = count / sum(count))
+  
+  # Reordena los niveles del factor 'gex_annotation_wo_d'
+  proportions$gex_annotation_wo_d <- factor(proportions$gex_annotation_wo_d, 
+                                            levels = c("0", "1", "2", "6", "5", "3", "4", "7", "8", "9"))
+  
+  # Definir la paleta de colores para los diferentes clústeres
+  colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#46039FFF", 
+                                              "#7201A8FF", "#9C179EFF", "#BD3786FF", 
+                                              "#D8576BFF", "#ED7953FF", "#FA9E3BFF", 
+                                              "#FDC926FF", "#F0F921FF")))(length(unique(proportions$gex_annotation_wo_d)))
+
+  # Crear el gráfico de barras apiladas para cada ratón
+  p <- ggplot(proportions, aes(x = clone_id, y = proportion, fill = gex_annotation_wo_d)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = count), position = position_stack(vjust = 0.5), color = "black", size = 3) +
+    scale_fill_manual(values = colorblind_vector) +
+    ylab("Proportion") +
+    xlab("Clone ID") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 53, hjust = 1, face = "bold")) +
+    ggtitle(paste("Proportion of Clusters by Clone ID for", mouse))
+  
+  # Guardar el gráfico en la lista
+  plots[[mouse]] <- p
+}
+
+# Mostrar los gráficos
+for (p in plots) {
+  print(p)
+}
+
+```
+
+```{r}
+library(dplyr)
+
+# Filtrar dataframes
+ratones_clonales <- list(
+  "m.44" = bcr_gex_data_wo_dob_m44_clone_study,
+  "m.45" = bcr_gex_data_wo_dob_m45_clone_study,
+  "m.48" = bcr_gex_data_wo_dob_m48_clone_study,
+  "m.49" = bcr_gex_data_wo_dob_m49_clone_study,
+  "m.50" = bcr_gex_data_wo_dob_m50_clone_study
+)
+
+# Crear una lista para almacenar las tablas
+tables <- list()
+
+# Generar tablas para cada ratón
+for (mouse in names(ratones_clonales)) {
+  mouse_data <- ratones_clonales[[mouse]]
+  
+  # Calcular los valores necesarios para cada clone_id
+  table <- mouse_data %>%
+    group_by(clone_id) %>%
+    summarise(
+      raton = mouse,
+      numero = unique(clone_size_count_wo_dob),
+      mutacion_somatica = mean(bcr_mu_freq_H, na.rm = TRUE),
+      IgM = sum(isotype_2 == "IgM", na.rm = TRUE),
+      IgD = sum(isotype_2 == "IgD", na.rm = TRUE),
+      IgG = sum(isotype_2 == "IgG", na.rm = TRUE),
+      IgA = sum(isotype_2 == "IgA", na.rm = TRUE),
+      NA_count = sum(is.na(isotype_2)),  # Contar los valores NA en isotype_2
+      num_clusters = n_distinct(gex_annotation_wo_d),
+      CDR3H = first(bcr_aa_H, na.rm = TRUE),
+      CDR3K = first(bcr_aa_K, na.rm = TRUE),
+      CDR3L = first(bcr_aa_L, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    distinct() %>%
+    arrange(desc(mutacion_somatica))  # Ordenar de mayor a menor mutación somática
+  
+  # Añadir la tabla a la lista
+  tables[[mouse]] <- table
+}
+
+# Mostrar las tablas
+for (mouse in names(tables)) {
+  cat("\nTabla para el ratón", mouse, ":\n")
+  print(tables[[mouse]])
+}
+
+```
+
+Exportamos la tabla a excel:
+
+# Representamos las candidatas en un UMAP
+
+
+```{r}
+library(openxlsx)
+# Guardar cada tabla en un archivo Excel separado
+for (mouse in names(tables)) {
+  filename <- paste0(mouse, "_clones_seleccionados.xlsx")
+  write.xlsx(tables[[mouse]], filename)
+}
+```
+
+De aquí tenemos también el árbol genealógico
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Filtrar los datos para obtener los clones especificados
+clones_a_representar <- bcr_gex_data_wo_dob %>%
+  filter((clone_id == "263" & orig.ident == "m.44") |
+         (clone_id == "15" & orig.ident == "m.45"))
+
+# Asignar color a las células en función de si son de los clones especificados
+clones_a_representar$color <- ifelse(clones_a_representar$clone_id == "263" & clones_a_representar$orig.ident == "m.44", "red",
+                              ifelse(clones_a_representar$clone_id == "15" & clones_a_representar$orig.ident == "m.45", "blue", "gray"))
+
+# Crear el primer UMAP
+umap_plot1 <- ggplot(bcr_gex_data_wo_dob, aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d)) +
+  geom_point(color = "gray", size = 1) +
+  geom_point(data = clones_a_representar, aes(color = color), size = 1.5) +
+  scale_color_identity() +
+  labs(title = "UMAP con Clon 263 (m.44) en rojo y Clon 15 (m.45) en azul") +
+  theme_minimal()
+
+print(umap_plot1)
+
+# Filtrar los datos para obtener los clones especificados
+clones_a_representar2 <- bcr_gex_data_wo_dob %>%
+  filter((clone_id == "534" & orig.ident == "m.44") |
+         (clone_id == "200" & orig.ident == "m.45"))
+
+# Asignar color a las células en función de si son de los clones especificados
+clones_a_representar2$color <- ifelse(clones_a_representar2$clone_id == "534" & clones_a_representar2$orig.ident == "m.44", "red",
+                               ifelse(clones_a_representar2$clone_id == "200" & clones_a_representar2$orig.ident == "m.45", "blue", "gray"))
+
+# Crear el segundo UMAP
+umap_plot2 <- ggplot(bcr_gex_data_wo_dob, aes(x = gex_umap_1_wo_d, y = gex_umap_2_wo_d)) +
+  geom_point(color = "gray", size = 1) +
+  geom_point(data = clones_a_representar2, aes(color = color), size = 1.5) +
+  scale_color_identity() +
+  labs(title = "UMAP con Clon 534 (m.44) en rojo y Clon 200 (m.45) en azul") +
+  theme_minimal()
+
+print(umap_plot2)
+
+```
+
+## Creamos el clone_id basado en clone_size_count. Tendremos dos clon_id basados o solo en IGH o en la combinación de ambos.
+
+EL CLONE_SIZE CREADO POR AIRR TIENE EN CUENTA EL CDR3 DE LA CADENA PESADA PERO TAMBIEN CONSIDERA EL MISMO SI HA CAMBIADO SOLO UN AA EN LA CADENA LIGERA Y HA CAMBIADO EL ISOTIPO, PORQUE LO CONSIDERA PARTE DEL MISMO CLON EVOLUCIONADO.
+por ejemplo:
+CAATMVTGDYW + CQQGKTLPPTF
+CAATMVTGDYW + CQQGNTLPPTF
+
+permite un cambio en la cadena ligera para poder considerarlo el mismo.
+
+Los consideraría el mismo, yo hare dos clone_id, uno solo por IGH y otro teniendo en cuenta la combinación exacta con la cadena ligera. Variará algo porque la asignación de los clones automáticos tiene en cuenta más cosas mucho más sutiles que yo no soy capaz de hacer. El anterior lo tendremos en cuenta también.
+
+
+HAY MUCHA CONTAMINACION RESPECTO AL MISMO TIPO DE CDR3H, POR ESO SALEN TANTISIMOS, PORQUE SE COMPARTEN ENTRE UN MONTÓN DE CLÚSTERES Y POR ESO CREO QUE EL ALGORITMO DE AIRR TIENE EN CUENTA AMBAS CADENAS Y QUE ADEMAS ENTRE LAS LIGERAS VARIEN POR LO MENOS EN UN AA.
+
+```{r}
+library(openxlsx)
+# Guardar "mouse_45_clones" en otro archivo Excel
+write.xlsx(bcr_gex_data_wo_dob_m44_clone_study, "bcr_gex_data_wo_dob_m44_clone_study.xlsx")
+```
+
+
+```{r}
+new.cluster.ids <-  c("C0-Naive/activada",
+                      "C1-Memoria (no-IS)", 
+                      "C2-Naive/activada-II",
+                      "C3-Activados+ PreMem",
+                      "C4-Plasmblasto",
+                      "C5-Memoria-IS",
+                      "C6-Memoria-IS",
+                      "C7-Plasmaticas",
+                      "C8-Plasmblasto-act-mem",
+                      "C9-Plasmblasto-act-mem-II")
+names(new.cluster.ids) <- levels(data.RNA.BCR.filt.wo.dob)
+data.RNA.BCR.filt.wo.dob <- RenameIdents(data.RNA.BCR.filt.wo.dob, new.cluster.ids)
+head(Idents(data.RNA.BCR.filt.wo.dob), 5)
+```
+
+```{r}
+DimPlot(data.RNA.BCR.filt.wo.dob, reduction = "umap",pt.size = 1.5)
+```
+
+```{r}
+new.cluster.ids <- c("C0", "C1","C2","C3","C4","C5","C6","C7","C8","C9","C10")
+# legend.ids <- c("C0-Naive/Naive activada", "C1-Plasmblasto","C2-memoria (no-IS)","C3-act +PreMem","C4-Memoria+plasmblasto","C5-Bmemoria-IS","C6-Bmemoria-IS","C7-Naive","C8-Plasmblasto-avanzado","C9-Plasmatica","C10-Breg(IS)")
+names(new.cluster.ids) <- levels(data.RNA.BCR.filt.wo.dob)
+data.RNA.BCR.filt.wo.dob <- RenameIdents(data.RNA.BCR.filt.wo.dob, new.cluster.ids)
+DimPlot(data.RNA.BCR.filt.wo.dob, reduction = "umap", label = TRUE, pt.size = 1.5) 
+```
+
+```{r}
+DimPlot(data_integrated_VDJ, reduction = "umap", label = TRUE, pt.size = 1.5)
+```
+
+
+# BUSCAR LOS LB MÁS PROBABLE DE SER ESPECÍFICOS DE TUMOR.
+
+- QUE ESTEN EXPANDIDOS (ELEGIR A PARTIR DE CIERTO RANGO, QUITAR TODOS LOS UNIS) --> QUE SEAN MEDIUM O LARGE.
+- QUE TENGAN CAMBIO ISOTIPO EN EL MISMO CLON (MIRAR EL ARBOL GENEALÓGICO)
+- QUE PRESENTEN HIPERMUTACION SOMÁTICA (QUITAR TODOS LOS QUE SEAN 0) --> POR LO MENOS UNA SHM DEL 1%.
+- QUE ESTÉ PRESENTE EN EL CLÚSTER DE PLASMÁTICAS (SE SABE BIEN CUAL ES) Y QUE TENGAN EL CAMBIO.
+
+YO COGERIA DIRECTAMENTE LOS DEL DOWSER Y VERÍA SI CUMPLEN ESTOS REQUISITOS Y TIRANDO.
+
+PARA VER LOS COMUNES ENTRE LOS RATONES:
+ME QUEDARIA CON AQUELLOS CDR3_H COMUNES 100% ENTRE RATONES
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

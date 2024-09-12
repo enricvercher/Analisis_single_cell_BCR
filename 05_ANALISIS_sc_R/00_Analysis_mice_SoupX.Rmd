@@ -1,0 +1,529 @@
+---
+title: "Analysis_all_mouse"
+author: "Enric Vercher"
+date: "2024-06-10"
+output: html_document
+---
+
+```{r}
+suppressPackageStartupMessages({library(parallel)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(patchwork)
+library(DoubletFinder)
+library(sctransform)
+library(glmGamPoi)
+library(SeuratDisk)
+library(SeuratData)
+library(SeuratWrappers)
+library(Nebulosa)
+library(scales)
+library(scRepertoire)
+library(knitr)
+library(UCell)
+library(Nebulosa)
+library(knitr)
+library(SoupX)
+library(DropletUtils)  
+#para las paletas de colores personalizadas
+library(scCustomize)
+library(qs)})
+suppressPackageStartupMessages(library(ComplexHeatmap))
+```
+
+
+# FILTRAMOS LAS MATRICES CON SoupX
+
+https://cran.r-project.org/web/packages/SoupX/vignettes/pbmcTutorial.html
+
+https://cellgeni.github.io/notebooks/html/new-10kPBMC-SoupX.html
+
+Para ello tenemos que cargar tanto la matriz cruda como filtrada.
+
+# Cargar matrices del Cellranger
+
+```{r}
+# Mouse 44
+m.44.toc <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_44/Datos_cellranger/m.44_filtered_gene_bc_matrices")
+m.44.tod <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_44/Datos_cellranger/m.44_raw_gene_bc_matrices")
+
+# Mouse 45
+m.45.toc <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_45/Datos_cellranger/m.45_filtered_gene_bc_matrices")
+m.45.tod <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_45/Datos_cellranger/m.45_raw_gene_bc_matrices")
+
+# Mouse 48
+m.48.toc <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_48_filtered_feature_bc_matrix/Datos_cellranger/m.48_filtered_gene_bc_matrices")
+m.48.tod <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_48_filtered_feature_bc_matrix/Datos_cellranger/m.48_raw_gene_bc_matrices")
+
+# Mouse 49
+m.49.toc <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_49/Datos_cellranger/m.49_filtered_gene_bc_matrices")
+m.49.tod <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_49/Datos_cellranger/m.49_raw_gene_bc_matrices")
+
+# Mouse 50
+m.50.toc <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_50/Datos_cellranger/m.50_filtered_gene_bc_matrices")
+m.50.tod <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_50/Datos_cellranger/m.50_raw_gene_bc_matrices")
+
+# Mouse 52
+m.52.toc <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_52/Datos_cellranger/m.52_filtered_gene_bc_matrices")
+m.52.tod <- Read10X(data.dir="C:/Users/d940401/Desktop/Analisis_Seurat/mouse_52/Datos_cellranger/m.52_raw_gene_bc_matrices")
+
+```
+
+```{r}
+# Mouse 44
+sc.44 <- SoupChannel(m.44.tod, m.44.toc, calcSoupProfile = FALSE)
+srat.44 <- CreateSeuratObject(counts = m.44.toc)
+
+# Mouse 45
+sc.45 <- SoupChannel(m.45.tod, m.45.toc, calcSoupProfile = FALSE)
+srat.45 <- CreateSeuratObject(counts = m.45.toc)
+
+# Mouse 48
+sc.48 <- SoupChannel(m.48.tod, m.48.toc, calcSoupProfile = FALSE)
+srat.48 <- CreateSeuratObject(counts = m.48.toc)
+
+# Mouse 49
+sc.49 <- SoupChannel(m.49.tod, m.49.toc, calcSoupProfile = FALSE)
+srat.49 <- CreateSeuratObject(counts = m.49.toc)
+
+# Mouse 50
+sc.50 <- SoupChannel(m.50.tod, m.50.toc, calcSoupProfile = FALSE)
+srat.50 <- CreateSeuratObject(counts = m.50.toc)
+
+# Mouse 52
+sc.52 <- SoupChannel(m.52.tod, m.52.toc, calcSoupProfile = FALSE)
+srat.52 <- CreateSeuratObject(counts = m.52.toc)
+
+```
+
+Transformamos nuestros datos para tener los clusters:
+
+```{r}
+# Mouse 44
+srat.44 <- SCTransform(srat.44, verbose = FALSE)
+srat.44 <- RunPCA(srat.44, verbose = FALSE)
+srat.44 <- RunUMAP(srat.44, dims = 1:30, verbose = FALSE)
+srat.44 <- FindNeighbors(srat.44, dims = 1:30, verbose = FALSE)
+srat.44 <- FindClusters(srat.44, verbose = TRUE)
+
+# Mouse 45
+srat.45 <- SCTransform(srat.45, verbose = FALSE)
+srat.45 <- RunPCA(srat.45, verbose = FALSE)
+srat.45 <- RunUMAP(srat.45, dims = 1:30, verbose = FALSE)
+srat.45 <- FindNeighbors(srat.45, dims = 1:30, verbose = FALSE)
+srat.45 <- FindClusters(srat.45, verbose = TRUE)
+
+# Mouse 48
+srat.48 <- SCTransform(srat.48, verbose = FALSE)
+srat.48 <- RunPCA(srat.48, verbose = FALSE)
+srat.48 <- RunUMAP(srat.48, dims = 1:30, verbose = FALSE)
+srat.48 <- FindNeighbors(srat.48, dims = 1:30, verbose = FALSE)
+srat.48 <- FindClusters(srat.48, verbose = TRUE)
+
+# Mouse 49
+srat.49 <- SCTransform(srat.49, verbose = FALSE)
+srat.49 <- RunPCA(srat.49, verbose = FALSE)
+srat.49 <- RunUMAP(srat.49, dims = 1:30, verbose = FALSE)
+srat.49 <- FindNeighbors(srat.49, dims = 1:30, verbose = FALSE)
+srat.49 <- FindClusters(srat.49, verbose = TRUE)
+
+# Mouse 50
+srat.50 <- SCTransform(srat.50, verbose = FALSE)
+srat.50 <- RunPCA(srat.50, verbose = FALSE)
+srat.50 <- RunUMAP(srat.50, dims = 1:30, verbose = FALSE)
+srat.50 <- FindNeighbors(srat.50, dims = 1:30, verbose = FALSE)
+srat.50 <- FindClusters(srat.50, verbose = TRUE)
+
+# Mouse 52
+srat.52 <- SCTransform(srat.52, verbose = FALSE)
+srat.52 <- RunPCA(srat.52, verbose = FALSE)
+srat.52 <- RunUMAP(srat.52, dims = 1:30, verbose = FALSE)
+srat.52 <- FindNeighbors(srat.52, dims = 1:30, verbose = FALSE)
+srat.52 <- FindClusters(srat.52, verbose = TRUE)
+
+```
+
+```{r}
+apply_to_each_mouse <- function(sc, srat) {
+  # Calcular scNoDrops
+  toc <- sc$toc
+  scNoDrops <- SoupChannel(toc, toc, calcSoupProfile = FALSE)
+  soupProf <- data.frame(row.names = rownames(toc), est = rowSums(toc) / sum(toc), counts = rowSums(toc))
+  scNoDrops <- setSoupProfile(scNoDrops, soupProf)
+  
+  # Añadir metadatos a scNoDrops
+  meta <- srat@meta.data
+  umap <- srat@reductions$umap@cell.embeddings
+  scNoDrops <- setClusters(scNoDrops, setNames(meta$seurat_clusters, rownames(meta)))
+  scNoDrops <- setDR(scNoDrops, umap)
+  
+  return(scNoDrops)
+}
+
+# Aplicar a cada ratón
+scNoDrops.44 <- apply_to_each_mouse(sc.44, srat.44)
+scNoDrops.45 <- apply_to_each_mouse(sc.45, srat.45)
+scNoDrops.48 <- apply_to_each_mouse(sc.48, srat.48)
+scNoDrops.49 <- apply_to_each_mouse(sc.49, srat.49)
+scNoDrops.50 <- apply_to_each_mouse(sc.50, srat.50)
+scNoDrops.52 <- apply_to_each_mouse(sc.52, srat.52)
+
+```
+
+```{r}
+umap.44 <- srat.44@reductions$umap@cell.embeddings
+meta.44 <- srat.44@meta.data
+
+# Añadir las coordenadas UMAP al metadata del ratón 44
+meta.44$umap_1 <- umap.44[, 1]
+meta.44$umap_2 <- umap.44[, 2]
+
+# Filtrar el metadata para mantener solo las células presentes en scNoDrops del ratón 44
+dd.44 <- meta.44[colnames(scNoDrops.44$toc), ]
+
+# Añadir la expresión del gen Igkc al dataframe dd del ratón 44
+dd.44$Igkc <- scNoDrops.44$toc["Cd8a", ]
+
+# Crear el gráfico para el ratón 44
+ggplot(dd.44, aes(umap_1, umap_2)) + 
+  geom_point(aes(colour = Igkc > 0))
+gg = plotMarkerMap(scNoDrops.44, "Cd8a")
+plot(gg)
+```
+
+```{r}
+umap.45 <- srat.45@reductions$umap@cell.embeddings
+meta.45 <- srat.45@meta.data
+
+# Añadir las coordenadas UMAP al metadata del ratón 45
+meta.45$umap_1 <- umap.45[, 1]
+meta.45$umap_2 <- umap.45[, 2]
+
+# Filtrar el metadata para mantener solo las células presentes en scNoDrops del ratón 45
+dd.45 <- meta.45[colnames(scNoDrops.45$toc), ]
+
+# Añadir la expresión del gen Igkc al dataframe dd del ratón 45
+dd.45$Igkc <- scNoDrops.45$toc["Igkc", ]
+
+# Crear el gráfico para el ratón 45
+ggplot(dd.45, aes(umap_1, umap_2)) + 
+  geom_point(aes(colour = Igkc > 0))
+gg = plotMarkerMap(scNoDrops.45, "Igkc")
+plot(gg)
+```
+
+```{r}
+umap.48 <- srat.48@reductions$umap@cell.embeddings
+meta.48 <- srat.48@meta.data
+
+# Añadir las coordenadas UMAP al metadata del ratón 48
+meta.48$umap_1 <- umap.48[, 1]
+meta.48$umap_2 <- umap.48[, 2]
+
+# Filtrar el metadata para mantener solo las células presentes en scNoDrops del ratón 48
+dd.48 <- meta.48[colnames(scNoDrops.48$toc), ]
+
+# Añadir la expresión del gen Igkc al dataframe dd del ratón 48
+dd.48$Igkc <- scNoDrops.48$toc["Igkc", ]
+
+# Crear el gráfico para el ratón 48
+ggplot(dd.48, aes(umap_1, umap_2)) + 
+  geom_point(aes(colour = Igkc > 0))
+gg = plotMarkerMap(scNoDrops.48, "Igkc")
+plot(gg)
+```
+
+```{r}
+umap.49 <- srat.49@reductions$umap@cell.embeddings
+meta.49 <- srat.49@meta.data
+
+# Añadir las coordenadas UMAP al metadata del ratón 49
+meta.49$umap_1 <- umap.49[, 1]
+meta.49$umap_2 <- umap.49[, 2]
+
+# Filtrar el metadata para mantener solo las células presentes en scNoDrops del ratón 49
+dd.49 <- meta.49[colnames(scNoDrops.49$toc), ]
+
+# Añadir la expresión del gen Igkc al dataframe dd del ratón 49
+dd.49$Igkc <- scNoDrops.49$toc["Igkc", ]
+
+# Crear el gráfico para el ratón 49
+ggplot(dd.49, aes(umap_1, umap_2)) + 
+  geom_point(aes(colour = Igkc > 0))
+gg = plotMarkerMap(scNoDrops.49, "Igkc")
+plot(gg)
+```
+```{r}
+umap.50 <- srat.50@reductions$umap@cell.embeddings
+meta.50 <- srat.50@meta.data
+
+# Añadir las coordenadas UMAP al metadata del ratón 50
+meta.50$umap_1 <- umap.50[, 1]
+meta.50$umap_2 <- umap.50[, 2]
+
+# Filtrar el metadata para mantener solo las células presentes en scNoDrops del ratón 50
+dd.50 <- meta.50[colnames(scNoDrops.50$toc), ]
+
+# Añadir la expresión del gen Igkc al dataframe dd del ratón 50
+dd.50$Igkc <- scNoDrops.50$toc["Csf1r", ]
+
+# Crear el gráfico para el ratón 50
+ggplot(dd.50, aes(umap_1, umap_2)) + 
+  geom_point(aes(colour = Igkc > 0))
+gg = plotMarkerMap(scNoDrops.50, "Csf1r")
+plot(gg)
+```
+
+```{r}
+umap.52 <- srat.52@reductions$umap@cell.embeddings
+meta.52 <- srat.52@meta.data
+
+# Añadir las coordenadas UMAP al metadata del ratón 52
+meta.52$umap_1 <- umap.52[, 1]
+meta.52$umap_2 <- umap.52[, 2]
+
+# Filtrar el metadata para mantener solo las células presentes en scNoDrops del ratón 52
+dd.52 <- meta.52[colnames(scNoDrops.52$toc), ]
+
+# Añadir la expresión del gen Igkc al dataframe dd del ratón 52
+dd.52$Igkc <- scNoDrops.52$toc["Igkc", ]
+
+# Crear el gráfico para el ratón 52
+ggplot(dd.52, aes(umap_1, umap_2)) + 
+  geom_point(aes(colour = Igkc > 0))
+gg = plotMarkerMap(scNoDrops.52, "Igkc")
+plot(gg)
+```
+
+# Vamos a calcular la contaminación por ratón y a limpiarlo para los posteriores análisis
+
+```{r}
+scNoDrops.44 <- setContaminationFraction(scNoDrops.44, 0.2); scNoDrops.45 <- setContaminationFraction(scNoDrops.45, 0.2); scNoDrops.48 <- setContaminationFraction(scNoDrops.48, 0.2); scNoDrops.49 <- setContaminationFraction(scNoDrops.49, 0.2); scNoDrops.50 <- setContaminationFraction(scNoDrops.50, 0.2); scNoDrops.52 <- setContaminationFraction(scNoDrops.52, 0.2)
+```
+
+
+En este enlace se discuten los resultados de otro ejemplo de internet:
+
+https://github.com/constantAmateur/SoupX/issues/47
+
+```{r}
+# Ratón 44
+scNoDrops.44 <- autoEstCont(scNoDrops.44)
+scNoDrops.44 <- autoEstCont(scNoDrops.44, priorRhoStdDev = 0.3)
+head(scNoDrops.44$soupProfile[order(scNoDrops.44$soupProfile$est, decreasing = TRUE), ], n = 50)
+plotMarkerDistribution(scNoDrops.44)
+```
+
+```{r}
+# Ratón 45
+scNoDrops.45 <- autoEstCont(scNoDrops.45)
+scNoDrops.45 <- autoEstCont(scNoDrops.45, priorRhoStdDev = 0.3)
+head(scNoDrops.45$soupProfile[order(scNoDrops.45$soupProfile$est, decreasing = TRUE), ], n = 50)
+plotMarkerDistribution(scNoDrops.45)
+```
+
+```{r}
+# Ratón 48
+scNoDrops.48 <- autoEstCont(scNoDrops.48)
+scNoDrops.48 <- autoEstCont(scNoDrops.48, priorRhoStdDev = 0.3)
+head(scNoDrops.48$soupProfile[order(scNoDrops.48$soupProfile$est, decreasing = TRUE), ], n = 50)
+plotMarkerDistribution(scNoDrops.48)
+```
+
+```{r}
+# Ratón 49
+scNoDrops.49 <- autoEstCont(scNoDrops.49,forceAccept = TRUE)
+scNoDrops.49 <- autoEstCont(scNoDrops.49, priorRhoStdDev = 0.3)
+head(scNoDrops.49$soupProfile[order(scNoDrops.49$soupProfile$est, decreasing = TRUE), ], n = 50)
+plotMarkerDistribution(scNoDrops.49)
+```
+
+```{r}
+# Ratón 50
+scNoDrops.50 <- autoEstCont(scNoDrops.50, forceAccept = TRUE)
+scNoDrops.50 <- autoEstCont(scNoDrops.50, priorRhoStdDev = 0.3)
+head(scNoDrops.50$soupProfile[order(scNoDrops.50$soupProfile$est, decreasing = TRUE), ], n = 50)
+plotMarkerDistribution(scNoDrops.50)
+```
+
+```{r}
+# Ratón 52
+scNoDrops.52 <- autoEstCont(scNoDrops.52)
+scNoDrops.52 <- autoEstCont(scNoDrops.52, priorRhoStdDev = 0.3)
+head(scNoDrops.52$soupProfile[order(scNoDrops.52$soupProfile$est, decreasing = TRUE), ], n = 20)
+plotMarkerDistribution(scNoDrops.52)
+```
+
+
+```{r}
+nonExpressedGeneList = list(No_LB = c("Cd68", "Csf1r","C1qa","C1qb","C1qc","Cd8a","Cd3e","Cxcl10","Nkg7"), LB = c("Igkc", "Ighg1", "Ighg3","Cd79a","Cd19","Foxo1","Irf4","Xbp1","Bach2","Ptprc"))
+
+
+No_LB = c("Cd68", "Csf1r","C1qa","C1qb","C1qc","Cxcl10","Cxcl2","Il1b","Pltp","Il1b")
+LB = c("Cd19","Ptprc","Cd79a","Cd79b","Ighm","Ighd")
+LT = c("Cd8a","Cd4","Cd3e")
+```
+
+
+```{r}
+# scNoDrops = autoEstCont(scNoDrops)
+# scNoDrops = autoEstCont(scNoDrops,priorRhoStdDev = 0.3)
+# head(scNoDrops$soupProfile[order(scNoDrops$soupProfile$est, decreasing = TRUE), ], n = 50)
+# plotMarkerDistribution(scNoDrops)
+```
+
+```{r}
+# Bgenes <- c("Igkc", "Ighg1", "Ighg3","Cd79a","Cd79b","Cd19","Foxo1","Prdm1","Irf4","Xbp1","Bach2","Ptprc","Junb","Fcer2a","Sell","Igha","Ighd", "Ighe","Ighm") #37.5
+# Bgenes1 <- c("Igkc", "Ighg1", "Ighg3","Cd19","Foxo1","Prdm1","Irf4","Xbp1","Igha","Ighd", "Ighe","Ighm") #38% de contaminacion
+# Bgenes2 <- c("Igkc", "Ighg1", "Ighg3","Igha","Ighd", "Ighe","Ighm") #36% de contaminacion
+# Bgenes3 <- c("Cd19","Foxo1","Prdm1","Irf4","Xbp1","Bach2") #35%
+```
+
+Mejor con los clusteres y ser conservador:
+
+```{r}
+useToEst.44 <- estimateNonExpressingCells(scNoDrops.44, nonExpressedGeneList = list(No_LB= No_LB, LB=LB))
+
+
+plotMarkerMap(scNoDrops.44, geneSet = No_LB, useToEst = useToEst.44)
+
+scNoDrops.44 <- calculateContaminationFraction(scNoDrops.44, list(No_LB,LB), useToEst = useToEst.44)
+#Se limpia
+out.44 <- adjustCounts(scNoDrops.44)
+cntSoggy.44 <- rowSums(scNoDrops.44$toc > 0)
+cntStrained.44 <- rowSums(out.44 > 0)
+mostZeroed.44 <- tail(sort((cntSoggy.44 - cntStrained.44)/cntSoggy.44), n = 10)
+tail(sort(rowSums(scNoDrops.44$toc > out.44)/rowSums(scNoDrops.44$toc > 0)), n = 20)
+plotChangeMap(scNoDrops.44, out.44, "Igkc", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Cd19", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Cd8a", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "C1qa", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Cd3e", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Nkg7", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Csf1r", pointSize = 1)
+plotChangeMap(scNoDrops.44, out.44, "Cd79a", pointSize = 1)
+```
+
+
+```{r}
+useToEst.45 <- estimateNonExpressingCells(scNoDrops.45, nonExpressedGeneList = list(No_LB = No_LB, LB=LB))
+plotMarkerMap(scNoDrops.45, geneSet = No_LB, useToEst = useToEst.45)
+scNoDrops.45 <- calculateContaminationFraction(scNoDrops.45, list(No_LB = No_LB,LB=LB), useToEst = useToEst.45)
+out.45 <- adjustCounts(scNoDrops.45)
+cntSoggy.45 <- rowSums(scNoDrops.45$toc > 0)
+cntStrained.45 <- rowSums(out.45 > 0)
+mostZeroed.45 <- tail(sort((cntSoggy.45 - cntStrained.45)/cntSoggy.45), n = 10)
+tail(sort(rowSums(scNoDrops.45$toc > out.45)/rowSums(scNoDrops.45$toc > 0)), n = 20)
+plotChangeMap(scNoDrops.45, out.45, "Igkc", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Cd19", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Cd8a", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "C1qa", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Cd3e", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Nkg7", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Csf1r", pointSize = 1)
+plotChangeMap(scNoDrops.45, out.45, "Cd79a", pointSize = 1)
+```
+
+
+```{r}
+useToEst.48 <- estimateNonExpressingCells(scNoDrops.48, nonExpressedGeneList = list(No_LB = No_LB, LB=LB))
+plotMarkerMap(scNoDrops.48, geneSet = No_LB, useToEst = useToEst.48)
+scNoDrops.48 <- calculateContaminationFraction(scNoDrops.48, list(No_LB = No_LB, LB=LB), useToEst = useToEst.48)
+out.48 <- adjustCounts(scNoDrops.48)
+cntSoggy.48 <- rowSums(scNoDrops.48$toc > 0)
+cntStrained.48 <- rowSums(out.48 > 0)
+mostZeroed.48 <- tail(sort((cntSoggy.48 - cntStrained.48)/cntSoggy.48), n = 10)
+tail(sort(rowSums(scNoDrops.48$toc > out.48)/rowSums(scNoDrops.48$toc > 0)), n = 20)
+plotChangeMap(scNoDrops.48, out.48, "Igkc", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Cd19", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Cd8a", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "C1qa", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Cd3e", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Nkg7", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Csf1r", pointSize = 1)
+plotChangeMap(scNoDrops.48, out.48, "Cd79a", pointSize = 1)
+```
+
+```{r}
+useToEst.49 <- estimateNonExpressingCells(scNoDrops.49, nonExpressedGeneList = list(No_LB = No_LB, LB=LB))
+plotMarkerMap(scNoDrops.49, geneSet = No_LB, useToEst = useToEst.49)
+scNoDrops.49 <- calculateContaminationFraction(scNoDrops.49, list(No_LB = No_LB, LB=LB), useToEst = useToEst.49)
+out.49 <- adjustCounts(scNoDrops.49)
+cntSoggy.49 <- rowSums(scNoDrops.49$toc > 0)
+cntStrained.49 <- rowSums(out.49 > 0)
+mostZeroed.49 <- tail(sort((cntSoggy.49 - cntStrained.49)/cntSoggy.49), n = 10)
+tail(sort(rowSums(scNoDrops.49$toc > out.49)/rowSums(scNoDrops.49$toc > 0)), n = 20)
+plotChangeMap(scNoDrops.49, out.49, "Igkc", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Cd19", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Cd8a", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "C1qa", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Cd3e", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Nkg7", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Csf1r", pointSize = 1)
+plotChangeMap(scNoDrops.49, out.49, "Cd79a", pointSize = 1)
+```
+
+```{r}
+useToEst.50 <- estimateNonExpressingCells(scNoDrops.50, nonExpressedGeneList = list(No_LB = No_LB, LB=LB))
+plotMarkerMap(scNoDrops.50, geneSet = No_LB, useToEst = useToEst.50)
+scNoDrops.50 <- calculateContaminationFraction(scNoDrops.50, list(No_LB = No_LB, LB=LB), useToEst = useToEst.50)
+out.50 <- adjustCounts(scNoDrops.50)
+cntSoggy.50 <- rowSums(scNoDrops.50$toc > 0)
+cntStrained.50 <- rowSums(out.50 > 0)
+mostZeroed.50 <- tail(sort((cntSoggy.50 - cntStrained.50)/cntSoggy.50), n = 10)
+tail(sort(rowSums(scNoDrops.50$toc > out.50)/rowSums(scNoDrops.50$toc > 0)), n = 20)
+plotChangeMap(scNoDrops.50, out.50, "Igkc", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Cd19", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Cd8a", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "C1qa", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Cd3e", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Nkg7", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Csf1r", pointSize = 1)
+plotChangeMap(scNoDrops.50, out.50, "Cd79a", pointSize = 1)
+```
+
+```{r}
+useToEst.52 <- estimateNonExpressingCells(scNoDrops.52, nonExpressedGeneList = list(No_LB = No_LB, LB=LB))
+plotMarkerMap(scNoDrops.52, geneSet = No_LB, useToEst = useToEst.52)
+scNoDrops.52 <- calculateContaminationFraction(scNoDrops.52, list(No_LB = No_LB, LB=LB), useToEst = useToEst.52)
+out.52 <- adjustCounts(scNoDrops.52)
+cntSoggy.52 <- rowSums(scNoDrops.52$toc > 0)
+cntStrained.52 <- rowSums(out.52 > 0)
+mostZeroed.52 <- tail(sort((cntSoggy.52 - cntStrained.52)/cntSoggy.52), n = 10)
+tail(sort(rowSums(scNoDrops.52$toc > out.52)/rowSums(scNoDrops.52$toc > 0)), n = 20)
+plotChangeMap(scNoDrops.52, out.52, "Igkc", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Cd19", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Cd8a", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "C1qa", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Cd68", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Cd3e", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Nkg7", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Csf1r", pointSize = 1)
+plotChangeMap(scNoDrops.52, out.52, "Cd79a", pointSize = 1)
+```
+
+Guardamos los objetos para procesarlos:
+
+```{r}
+DropletUtils:::write10xCounts("C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.44_soupX_filt", out.44)
+DropletUtils:::write10xCounts("C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.45_soupX_filt", out.45)
+DropletUtils:::write10xCounts("C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.48_soupX_filt", out.48)
+DropletUtils:::write10xCounts("C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.49_soupX_filt", out.49)
+DropletUtils:::write10xCounts("C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.50_soupX_filt", out.50)
+DropletUtils:::write10xCounts("C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.52_soupX_filt", out.52)
+```
+
+
