@@ -1,0 +1,46 @@
+# This template shows the possible cellranger multi config CSV options for analyzing Single Cell Gene Expression with Feature Barcode Technology (Antibody Capture, CRISPR Guide Capture, Cell Multiplexing, Antigen Capture), Fixed RNA Profiling, or Single Cell Immune Profiling data. 
+# These options cannot be used all together - see section descriptions for detail.
+# Use 'cellranger multi-template --parameters' to see descriptions of all parameters.
+# Please see cellranger multi documentation for details and experimental design-specific examples at https://www.10xgenomics.com/support.
+
+# it is a vartiant of multi_config_CSV.csv; in this case we are going to demultiplex the samples.
+
+[gene-expression]
+reference,/data/scratch/LAB/enric/TFM_enric/000_Cellranger_8/mouse_gen_transcr/refdata-gex-mm10-2020-A
+# expect-cells,10000
+cmo-set,/data/scratch/LAB/enric/TFM_enric/multi_config_CSV/demux/5p_hashing_demux_cmo-ref.csv
+create-bam,true 
+#CMO (cell multiplexing oligo) is used when there are hash-tag oligos.
+# difference regarding feature --> feature_types is Multiplexing Capture.
+
+#[vdj] # For TCR and BCR libraries only
+#reference, /data/scratch/LAB/enric/TFM_enric/000_Cellranger_8/mouse_gen_transcr/refdata-cellranger-vdj-GRCm38-alts-ensembl-7.0.0
+# we will use this once we have the hashed samples
+
+# [feature]
+# reference,/home/evercher/TFM/demultiplexing/5p_hashing_demux_feature.csv
+# in this case we don't use this part
+# This is only populated if we are using antibodies for phenotyping, not hashing antibodies to separate samples
+# if we use antobodies we should add "antibody capture" to feature_types in the libraries section
+
+[libraries]
+fastq_id,fastqs,lanes,feature_types
+TIB44-45-50_scRNAseq5,/data/scratch/LAB/tfm_enric_samples/TFM_FASTQ/TIB44-45-50_scRNAseq5,1|2,Gene Expression
+TIB44-45-50_scRNAseq_dext,/data/scratch/LAB/tfm_enric_samples/TFM_FASTQ/TIB44-45-50_scRNAseq_dext,1|2,Multiplexing Capture
+TIB52-48-49_scRNAseq5,/data/scratch/LAB/tfm_enric_samples/TFM_FASTQ/TIB52-48-49_scRNAseq5,1|2,Gene Expression
+TIB52-48-49_scRNAseq_dext,/data/scratch/LAB/tfm_enric_samples/TFM_FASTQ/TIB52-48-49_scRNAseq_dext,1|2,Multiplexing Capture
+
+#you only need two libraries here:
+#Path to GEX FASTQs: Only the GEX library is used for demultiplexing because the cell calling and tag calling algorithms
+#of cellranger multi work best on the GEX library. V(D)J calls are often a subset of GEX cells calls.
+# Path to Multiplexing Capture FASTQs (Feature Barcode library)
+
+[samples]
+sample_id,cmo_ids
+mouse_44,Hashtag1_Antibody
+mouse_45,Hashtag2_Antibody
+mouse_50,Hashtag3_Antibody
+mouse_52,Hashtag4_Antibody
+mouse_48,Hashtag5_Antibody
+mouse_49,Hashtag6_Antibody
+

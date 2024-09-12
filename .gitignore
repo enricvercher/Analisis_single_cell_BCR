@@ -1,24 +1,31 @@
-# Ignore working folders
-demultiplexed_samples/
-bamtofastq/
-final_analysis_cellmulti/
-VDJ_immcantation/
-02_VDJ_immcantation
-00_final_analysis_cellmulti/
-03_Analisis_scRNAseq_python/
-#multi_config_CSV/
-Scripts/
-#Analisis_sc_TFM.ipynb
-#scripts_auxiliares_jupyter/
-Contenedores/
-000_Cellranger_8/
-# Scripts_cellranger_7/
-# Scripts_cellranger_8/
-03_Analisis_scRNAseq_python/
-0_bamtofastq/
-# Ignore working files
+# Ignorar carpetas específicas que contienen resultados pesados
+/Analysis_sc_Python/Results/
+/Contenedores/
+
+# Ignorar carpetas dentro de Demultiplex/Results_demux
+
+/Demultiplex/Results_demux/0_bamtofastq/
+
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_7.1/Mouse_44-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_7.1/Mouse_45-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_7.1/Mouse_48-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_7.1/Mouse_49-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_7.1/Mouse_50-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_7.1/Mouse_52-final/
+
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/mouse_gen_transcr/
+
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/demultiplexed_samples_cellranger_8/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/Mouse_44-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/Mouse_45-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/Mouse_48-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/Mouse_49-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/Mouse_50-final/
+/Demultiplex/Results_demux/00_final_analysis_cellmulti_8.1/Mouse_52-final/
+
+
+# Ignorar archivos temporales o intermedios
 __demultiplexed_samples*
 
-
-# Any SLUM file
+# Ignorar archivos generados por SLURM
 slurm*.out

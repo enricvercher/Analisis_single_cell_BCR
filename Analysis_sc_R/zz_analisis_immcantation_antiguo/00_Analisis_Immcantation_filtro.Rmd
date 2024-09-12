@@ -1,0 +1,201 @@
+---
+title: "Analisis_immcantation_Enric"
+author: "Enric Vercher"
+date: "2023-11-07"
+output: html_document
+---
+
+```{r}
+# load libraries
+suppressPackageStartupMessages(library(airr))
+suppressPackageStartupMessages(library(alakazam))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(dowser))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(scoper))
+suppressPackageStartupMessages(library(shazam))
+suppressPackageStartupMessages(library(tigger))
+# Bioconductor package
+suppressPackageStartupMessages(library(ggtree))
+```
+
+Hemos procesado las secuencias en el cluster de cada muestra del raton
+
+```{bash}
+module load singularity
+DATADIR=/data/scratch/LAB/enric/TFM_enric/VDJ_immcantation/VDJ_TFM/
+SINGULARITY=/data/scratch/LAB/enric/TFM_enric/immcantation_suite-4.4.0.sif
+
+singularity exec -B $DATADIR:/data $SINGULARITY bash -c "\
+AssignGenes.py igblast \
+-s /data/VDJ_OTUs/*/filtered_contig_*.fasta \
+-b /usr/local/share/igblast \
+--organism mouse \
+--loci ig \
+--format blast \
+--outdir /data/results"
+```
+
+The `fmt7` results from IgBLAST are converted into the [AIRR](https://docs.airr-community.org/en/latest/datarep/rearrangements.html) format, a tabulated text file with one sequence per row. Columns provide the annotation for each sequence using standard column names as described here: https://docs.airr-community.org/en/latest/datarep/rearrangements.html.
+
+### Generate a standardized database file
+
+The command line tool `MakeDb.py igblast` requires the original input sequence fasta file (`-s`) that was passed to the V(D)J annotation tool, as well as the V(D)J annotation results (`-i`). The argument `--format airr` specifies that the results should be converted into the AIRR format. The path to the reference germlines is provided by `-r`.
+
+```{bash}
+##############################################
+### PARSE VDJ FILES INTO airr DB FORMAT ###
+##############################################
+# Get list of all samples available
+sample_list=(`ls -d $DATADIR/VDJ_OTUs/*/ | xargs -n 1 basename`)
+
+# Create filtered VDJ seq database files for each sample
+for sample in ${sample_list[@]}
+do
+    #Create tab-delimited database file to store seq alignment info
+    singularity exec -B $DATADIR:/data $SINGULARITY bash -c "\
+    MakeDb.py igblast \
+    -i /data/results/filtered_contig_"$sample"_igblast.fmt7 \
+    -s /data/VDJ_OTUs/"$sample"/filtered_contig_"$sample".fasta \
+    -r /usr/local/share/germlines/imgt/mouse/vdj/imgt_mouse_*.fasta \
+    -o /data/VDJ_OTUs/"$sample"/filtered_contig_"$sample"_igblast_db-pass-airr.tsv \
+    --10x /data/VDJ_OTUs/"$sample"/filtered_contig_annotations_"$sample".csv \
+    --format airr \
+    --extended"
+```
+
+### Subset the data to include productive heavy chain sequences
+
+`ParseDb.py select` finds the rows in the file `-d` from the previous step for which the column `v_call` (specified with `-f`) contains (pattern matching specified by `--regex`) the word `IGHV` (specified by `-u`). The prefix `data_ph` (standing for productive and heavy) will be used in the name of the output file (specified by `--outname`) to indicate that this file contains productive (p) heavy (h) chain sequence data.
+
+```{bash}
+    singularity exec -B $DATADIR:/data $SINGULARITY bash -c "\
+    ParseDb.py select -d /data/VDJ_OTUs/"$sample"/filtered_contig_"$sample"_igblast_db-pass-airr.tab \
+        -f productive \
+        -u T \
+        --outname "$sample"_productive"
+```
+
+# we filter the data to include **only heavy chain** sequences
+
+```{bash}
+    singularity exec -B $DATADIR:/data $SINGULARITY bash -c "\
+    ParseDb.py select -d /data/VDJ_OTUs/"$sample"/"$sample"_productive_parse-select.tab \
+        -f v_call \
+        -u IGHV \
+        --logic all \
+        --regex /
+        --outname "$sample"_filtered_heavy_airr"
+```
+
+Aqui ya quitamos los LB que no tienen cadena pesada.
+Luego exportamos a local y trabajamos en Rstudio
+
+Estan en formato change-o lo pasamos a airr en el cluster.
+
+```{r}
+m.44 <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/00_Directos_cluster/mouse_44_filtered_heavy_airr_parse-select.tsv')
+m.45 <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/00_Directos_cluster/mouse_45_filtered_heavy_airr_parse-select.tsv')
+m.48 <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/00_Directos_cluster/mouse_48_filtered_heavy_airr_parse-select.tsv')
+m.49 <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/00_Directos_cluster/mouse_49_filtered_heavy_airr_parse-select.tsv')
+m.50 <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/00_Directos_cluster/mouse_50_filtered_heavy_airr_parse-select.tsv')
+m.52 <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/00_Directos_cluster/mouse_52_filtered_heavy_airr_parse-select.tsv')
+
+```
+
+# Quitar células con múltiples cadenas pesadas.
+
+If there were more than one productive IGH detected within one cell, the most abundant IGH sequence was kept when the UMI counts of the most abundant IGH sequence were more than 10-fold of the second most abundant IGH sequence.
+
+Groups the data by cell_id. Within each group, it arranges the data in descending order of umi_count. It calculates the ratio of umi_count of the most abundant sequence to the umi_count of the second most abundant sequence. It keeps the cell_ids that have only one sequence_id and also the ones where the most abundant sequence_id is more than 10 times the second most abundant.
+
+```{r}
+# library(dplyr)
+# # Assuming 'df' is your data frame
+# result <- m.44 %>%
+#   group_by(cell_id) %>%
+#   arrange(desc(umi_count)) %>%
+#   mutate(ratio = umi_count / lead(umi_count, default = 0)) %>%
+#   filter(n() == 1 | (row_number() == 1 & ratio >= 10))
+# 
+# nrow(result)
+```
+Solo se rescatan una o dos
+
+```{r}
+library(dplyr)
+library(purrr)
+
+# Put all data frames in a list
+data_list <- list(m.44, m.45, m.48, m.49, m.50, m.52)
+
+# Define the operation as a function
+filter_func <- function(df) {
+  multi_heavy <- table(dplyr::filter(df, locus == "IGH")$cell_id)
+  multi_heavy_cells <- names(multi_heavy)[multi_heavy > 1]
+  
+  df.prueba <- dplyr::filter(df, !cell_id %in% multi_heavy_cells)
+  
+  return(df.prueba)
+}
+
+# Apply the function to each data frame in the list
+result_list_all_heavy_out <- map(data_list, filter_func)
+```
+
+
+```{r}
+m.44 <- result_list_all_heavy_out[[1]]
+m.45 <- result_list_all_heavy_out[[2]]
+m.48 <- result_list_all_heavy_out[[3]]
+m.49 <- result_list_all_heavy_out[[4]]
+m.50 <- result_list_all_heavy_out[[5]]
+m.52 <- result_list_all_heavy_out[[6]]
+```
+
+# probamos con el de cellrangeroutput
+
+```{r}
+library(dplyr)
+library(purrr)
+mouse_44_cellranger <- read.csv("C:/Users/d940401/Desktop/Analisis_Sauron/mouse_44/filtered_contig_annotations.csv")
+mouse_44_cellranger_solo_IGH <- dplyr::filter(mouse_44_cellranger,chain == "IGH")
+multi_heavy <- table(dplyr::filter(mouse_44_cellranger_solo_IGH, chain == "IGH")$barcode)
+multi_heavy_cells <- names(multi_heavy)[multi_heavy > 1]
+  
+mouse_44_cellranger_IGH_single <- dplyr::filter(mouse_44_cellranger_solo_IGH, !barcode %in% multi_heavy_cells)
+
+```
+
+Sale igual que en el análisis de Cell Ranger. 
+
+# guardado para posterior analisis
+
+```{r}
+write.table(m.44, file = "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/01_Filtro_heavy_chain/m44.filtered.tsv", sep = "\t", row.names = FALSE)
+write.table(m.45, file = "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/01_Filtro_heavy_chain/m45.filtered.tsv", sep = "\t", row.names = FALSE)
+write.table(m.48, file = "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/01_Filtro_heavy_chain/m48.filtered.tsv", sep = "\t", row.names = FALSE)
+write.table(m.49, file = "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/01_Filtro_heavy_chain/m49.filtered.tsv", sep = "\t", row.names = FALSE)
+write.table(m.50, file = "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/01_Filtro_heavy_chain/m50.filtered.tsv", sep = "\t", row.names = FALSE)
+write.table(m.52, file = "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/01_Filtro_heavy_chain/m52.filtered.tsv", sep = "\t", row.names = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

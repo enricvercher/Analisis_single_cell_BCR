@@ -1,0 +1,350 @@
+---
+title: "Analysis_all_mouse"
+author: "Enric Vercher"
+date: "2023-10-18"
+output: html_document
+---
+
+```{r}
+suppressPackageStartupMessages({library(parallel)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(patchwork)
+library(DoubletFinder)
+library(sctransform)
+library(glmGamPoi)
+library(SeuratDisk)
+library(SeuratData)
+library(SeuratWrappers)
+library(Nebulosa)
+library(scales)
+library(scRepertoire)
+library(knitr)
+library(UCell)
+library(Nebulosa)
+library(knitr)
+library(SoupX)
+library(DropletUtils) 
+library(UCell)
+#para las paletas de colores personalizadas
+library(scCustomize)
+library(qs)})
+suppressPackageStartupMessages(library(ComplexHeatmap))
+```
+Cargamos las matrices filtradas:
+
+```{r}
+# Para el ratón 44
+mouse_44.data <- Read10X(data.dir = "C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.44_soupX_filt")
+m.44 <- CreateSeuratObject(counts = mouse_44.data, project = "m.44", min.cells = 3, min.features = 200)
+
+# Para el ratón 45
+mouse_45.data <- Read10X(data.dir = "C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.45_soupX_filt")
+m.45 <- CreateSeuratObject(counts = mouse_45.data, project = "m.45", min.cells = 3, min.features = 200)
+
+# Para el ratón 48
+mouse_48.data <- Read10X(data.dir = "C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.48_soupX_filt")
+m.48 <- CreateSeuratObject(counts = mouse_48.data, project = "m.48", min.cells = 3, min.features = 200)
+
+# Para el ratón 49
+mouse_49.data <- Read10X(data.dir = "C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.49_soupX_filt")
+m.49 <- CreateSeuratObject(counts = mouse_49.data, project = "m.49", min.cells = 3, min.features = 200)
+
+# Para el ratón 50
+mouse_50.data <- Read10X(data.dir = "C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.50_soupX_filt")
+m.50 <- CreateSeuratObject(counts = mouse_50.data, project = "m.50", min.cells = 3, min.features = 200)
+
+# Para el ratón 52
+mouse_52.data <- Read10X(data.dir = "C:/Users/d940401/Desktop/Analisis_Seurat/matrices_SoupX/Matrices_ajustadas/m.52_soupX_filt")
+m.52 <- CreateSeuratObject(counts = mouse_52.data, project = "m.52", min.cells = 3, min.features = 200)
+```
+
+```{r}
+# Merge datasets into one single seurat object
+alldata <- merge(m.44, c(m.45, m.48, m.49, m.50,m.52), add.cell.ids = c("m.44", "m.45", "m.48", "m.49", "m.50","m.52"))
+# remove all objects that will not be used.
+rm(mouse_44.data, mouse_45.data,mouse_48.data,mouse_49.data,mouse_50.data,mouse_52.data)
+rm(m.44, m.45,m.48,m.49,m.50,m.52)
+# run garbage collect to free up memory
+gc()
+```
+
+```{r}
+Layers(alldata)
+Assays(alldata)
+```
+
+# Con lo anterior
+
+```{r}
+alldata <- PercentageFeatureSet(alldata, "^mt-", col.name = "percent.mt")
+alldata <- PercentageFeatureSet(alldata,  "^Rp[sl]", col.name = "percent_ribo")
+```
+
+```{r}
+feats <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent_ribo")
+feats_vln <- VlnPlot(alldata, group.by = "orig.ident", features = feats, pt.size = 0.01, ncol = 4) +
+    NoLegend() 
+feats_vln
+```
+
+```{r}
+VlnPlot(alldata, group.by = "orig.ident", features = "percent.mt", pt.size = 0.5, ncol = 2) + 
+  geom_hline(yintercept = 10, linetype="dashed", color = "red", size=1) +
+  geom_hline(yintercept = 7.5, linetype="dashed", color = "blue",size=1) +
+  geom_hline(yintercept = 5, linetype="dashed", color = "blue",size=1)
+```
+
+Vamos a estudiar las correlaciones para mejor interpretación
+
+```{r}
+FeatureScatter(alldata, feature1 = "nCount_RNA", feature2 = "percent.mt")
+```
+
+Altos pocentajes de genes mitocondriales se correlacionan con bajoas contajes de UMIS. Esto se interpreta como células muertas.
+
+```{r}
+FeatureScatter(alldata, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+```
+
+```{r}
+FeatureScatter(alldata, feature1 = "nCount_RNA", feature2 = "percent_ribo")
+```
+
+```{r}
+FeatureScatter(alldata, feature1 = "percent_ribo", feature2 = "percent.mt")
+```
+
+Altos contenidos de genes ribosomales no se correlaciona con los mitocondriales por lo que parece tener una señal biologica.
+
+# Filtering
+
+Consider cells with at least 200 detected genes and genes need to be expressed in at least 3 cells. Cambio a 500.
+
+```{r}
+#alldata_df_1 <- alldata@meta.data
+alldata <- JoinLayers(alldata)
+#alldata_df_2 <- alldata@meta.data
+
+```
+
+```{r}
+selected_c <- WhichCells(alldata, expression = nFeature_RNA > 200)
+selected_f <- rownames(alldata)[Matrix::rowSums(alldata@assays$RNA$counts) > 3]
+data.filt <- subset(alldata, features = selected_f, cells = selected_c)
+```
+
+```{r}
+dim(alldata)
+dim(data.filt)
+```
+
+# Filtramos los genes mitocondriales y el numero de genes y de UMIs
+
+Cells with total transcript count in the top 1% percentile were removed, as these cells were manually inspected to express transcripts of
+multiple V gene families per cell, indicating possible cell clumps tagged with the same barcode
+
+
+```{r}
+# Assuming your Seurat object is named 'data.filt'
+# Access the nCount_RNA values
+nCount_RNA_values <- data.filt$nCount_RNA
+
+# Get summary statistics
+summary(nCount_RNA_values)
+# Calcular el percentil 99%
+percentil_99 <- quantile(nCount_RNA_values, probs = 0.99)
+percentil_99
+
+```
+
+```{r}
+#vamos a ser conservadores y usaremos menor al 5%
+#4000 al mirar el violinplot, suelen usar 2500 tanto el paper de Ibai como el tutorial pero perdemos muchas células.
+data.filt <- subset(data.filt, subset = nFeature_RNA > 200 & nFeature_RNA < 4000 & percent.mt < 5 & nCount_RNA <= percentil_99)
+dim(data.filt)
+#hemos elminado 1567 células con estas características.
+table(alldata$orig.ident)
+table(data.filt$orig.ident)
+```
+Pasamos de 14799 células a 13121 --> quitamos 1678 células.
+
+
+```{r}
+data.filt <- NormalizeData(data.filt)
+dim(data.filt)
+```
+
+# Vamos los genes que mas se expresan en estos.
+
+```{r}
+# Compute the relative expression of each gene per cell Use sparse matrix
+# operations, if your dataset is large, doing matrix devisions the regular way
+# will take a very long time.
+par(mar = c(4, 8, 2, 1))
+C <- data.filt@assays$RNA$counts
+C <- Matrix::t(Matrix::t(C)/Matrix::colSums(C)) * 100
+most_expressed <- order(apply(C, 1, median), decreasing = T)[40:1]
+most_expressed <- rev(most_expressed)
+```
+
+```{r}
+boxplot(as.matrix(t(as.matrix(C[most_expressed, ]))), cex = 0.1, las = 1, xlab = "% total count per cell",
+        col = (scales::hue_pal())(40)[40:1], horizontal = TRUE)
+```
+
+Genes que pueden molestar que aparecen en las primeras PCA.
+- MALAT1 en la PC1 y PC1 es un lnRNA
+-m42418 –ln.coding
+-Tmsb4x y Actb en la PC1  polimerización actina
+- C1qc/qb/qa  aparecen PC1 PC2 y PC3. Son monocitos
+- Muchos genes ribosómicos (regress.out por ellos)
+
+```{r}
+rm(alldata)
+```
+
+```{r}
+feats <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent_ribo")
+plot_3 <- VlnPlot(data.filt, group.by = "orig.ident", features = feats, pt.size = 0.5, ncol = 2) +
+    NoLegend()
+plot_3
+```
+
+```{r}
+FeatureScatter(data.filt, feature1 = "percent_ribo", feature2 = "percent.mt")
+```
+
+
+```{r}
+table(Idents(data.filt))
+```
+
+# Filtramos aquellas que no expresem Cd8a, Cd3e ni Cd3g
+
+Vemos si las células que expresan Cd14 expresan IghM, IghD, IghA
+
+# Normalizamos y aplicamos single cell scoring
+
+```{r}
+#esto a mano, te lo pasa a minuscula, funciona muy bien
+m.s.genes <- str_to_title(cc.genes.updated.2019$s.genes)
+m.g2m.genes <- str_to_title(cc.genes.updated.2019$g2m.genes)
+```
+
+
+Segun: https://hbctraining.github.io/scRNA-seq/lessons/06_SC_SCT_and_integration.html
+
+
+Quitamos los linfos T y NK. Estos en el SoupX hemos visto que se apartaban bastante bien y no contaminaban.
+
+```{r}
+data.filt <- subset(data.filt, subset = Cd8a == 0 & Cd8b1 == 0 & Cd3e == 0 & Cd3g == 0 & Cd3d == 0 & Cd4 == 0 & Cd247 == 0 & Nkg7 == 0)
+dim(data.filt)
+```
+
+# Pruebas expresion genes
+
+```{r}
+library(dplyr)
+
+# Lista de genes de interés
+genes_interes <- c("Cd19", "Cd68", "C1qa", "C1qb", "C1qc")
+
+# Obtener los nombres de los ratones desde el metadata
+ratones <- unique(data.filt@meta.data$orig.ident)
+
+# Crear una lista para almacenar los datos de UMIs normalizadas por gen
+umis_por_gen_lista <- list()
+
+# Iterar sobre cada gen de interés
+for (gen in genes_interes) {
+  # Crear un dataframe para almacenar las sumas de UMIs normalizadas por ratón y gen
+  umis_por_gen <- data.frame(Raton = character(),
+                              UMIs = numeric(),
+                              stringsAsFactors = FALSE)
+  # Iterar sobre cada ratón
+  for (raton in ratones) {
+    # Subconjunto de datos para el ratón actual y el gen actual
+    raton_data <- FetchData(object = data.filt, vars = gen, cells = WhichCells(object = data.filt, idents = raton))
+    # Calcular las sumas de UMIs normalizadas para el gen actual en el ratón actual
+    umis <- rowSums(raton_data[, gen, drop = FALSE])
+    # Agregar los datos del ratón actual y el gen actual al dataframe
+    umis_por_gen <- bind_rows(umis_por_gen, data.frame(Raton = rep(raton, length(umis)),
+                                                        UMIs = umis))
+  }
+  # Agregar el dataframe a la lista
+  umis_por_gen_lista[[gen]] <- umis_por_gen
+}
+
+# Graficar la distribución de UMIs normalizadas por gen en gráficos separados
+library(ggplot2)
+
+# Iterar sobre cada gen y crear el gráfico correspondiente
+for (gen in genes_interes) {
+  # Crear el gráfico de violín para el gen actual
+  p <- ggplot(umis_por_gen_lista[[gen]], aes(x = Raton, y = UMIs, fill = Raton)) +
+    geom_violin() +
+    labs(x = "Ratón", y = "UMIs normalizadas", fill = "Ratón") +
+    ggtitle(paste("Distribución de UMIs normalizadas para", gen)) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  # Mostrar el gráfico
+  print(p)
+}
+```
+
+
+```{r}
+# Paso 1: Obtener los UMIs de cada gen para cada célula
+UMIs_por_celula <- as.matrix(GetAssayData(object = data.filt, slot = "counts", assay = "RNA"))
+
+# Paso 2: Crear un dataframe con la distribución de UMIs de cada gen por célula
+df <- data.frame(Cell = colnames(UMIs_por_celula),
+                 CD19 = UMIs_por_celula["Cd19", ],
+                 CD68 = UMIs_por_celula["Cd68", ],
+                 C1qa = UMIs_por_celula["C1qa", ],
+                 C1qb = UMIs_por_celula["C1qb", ],
+                 C1qc = UMIs_por_celula["C1qc", ])
+
+# Paso 3: Graficar la distribución de UMIs de cada gen por célula usando un gráfico de violín
+library(ggplot2)
+library(tidyr) # Para usar la función gather()
+
+# Convertir el dataframe a formato largo para facilitar la visualización
+df_long <- gather(df, key = "Gene", value = "UMIs", -Cell)
+
+# Graficar la distribución de UMIs de cada gen por célula
+ggplot(df_long, aes(x = Gene, y = UMIs, fill = Gene)) +
+  geom_violin() +
+  labs(x = "Genes", y = "UMIs", title = "Distribución de UMIs por célula para CD19, CD68, C1qa, C1qb y C1qc") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotar etiquetas del eje x para una mejor legibilidad
+
+```
+
+# Quitamos los genes del BCR
+
+```{r}
+#Obtener todos los genes
+all_genes <- rownames(data.filt)
+# Patrones para todos los genes de interés
+patrones_genes <- c("^Igk", "^Igl", "^Igh")
+# Seleccionar genes que coinciden con alguno de los patrones
+genes_interes <- all_genes[grep(paste(patrones_genes, collapse = "|"), all_genes)]
+data.filt <- data.filt[!rownames(data.filt) %in% genes_interes, ]
+dim(data.filt)
+```
+
+de 17401 a 17171 hemos quitado los 230 genes.
+
+# Guardamos para unirlos al BCR
+
+```{r}
+saveRDS(data.filt, file="scRNA_filtrado_soupx.rds")
+```
+
+

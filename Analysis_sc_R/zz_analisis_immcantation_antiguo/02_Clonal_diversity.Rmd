@@ -1,0 +1,543 @@
+---
+title: "02_clonal_diversity_analysis"
+author: "Enric Vercher"
+date: "2023-11-07"
+output: html_document
+---
+
+```{r}
+# load libraries
+suppressPackageStartupMessages(library(airr))
+suppressPackageStartupMessages(library(alakazam))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(dowser))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(scoper))
+suppressPackageStartupMessages(library(shazam))
+suppressPackageStartupMessages(library(tigger))
+```
+
+### Setting the clonal distance threshold with SHazaM
+
+
+```{r}
+m.44.s <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/m.44_genotyped.tsv')
+m.45.s <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/m.45_genotyped.tsv')
+m.48.s <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/m.48_genotyped.tsv')
+m.49.s <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/m.49_genotyped.tsv')
+m.50.s <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/m.50_genotyped.tsv')
+m.52.s <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/m.52_genotyped.tsv')
+```
+
+
+## Calculate distance 
+
+```{r}
+m.44.s <- distToNearest(m.44.s, model = "ham", normalize = "len",
+                    vCallColumn = "v_call_genotyped", nproc = 4)
+m.45.s <- distToNearest(m.45.s, model = "ham", normalize = "len",
+                    vCallColumn = "v_call_genotyped", nproc = 4)
+m.48.s <- distToNearest(m.48.s, model = "ham", normalize = "len",
+                    vCallColumn = "v_call_genotyped", nproc = 4)
+m.49.s <- distToNearest(m.49.s, model = "ham", normalize = "len",
+                    vCallColumn = "v_call_genotyped", nproc = 4)
+m.50.s <- distToNearest(m.50.s, model = "ham", normalize = "len",
+                    vCallColumn = "v_call_genotyped", nproc = 4)
+m.52.s <- distToNearest(m.52.s, model = "ham", normalize = "len",
+                    vCallColumn = "v_call_genotyped", nproc = 4)
+```
+
+
+# Files with distance for the slurm cluster
+
+```{r}
+write.table(m.44.s, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/mouse_44.genotyped.dist.tsv", sep = "\t", row.names = FALSE)
+write.table(m.45.s, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/mouse_45.genotyped.dist.tsv", sep = "\t", row.names = FALSE)
+write.table(m.48.s, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/mouse_48.genotyped.dist.tsv", sep = "\t", row.names = FALSE)
+write.table(m.49.s, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/mouse_49.genotyped.dist.tsv", sep = "\t", row.names = FALSE)
+write.table(m.50.s, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/mouse_50.genotyped.dist.tsv", sep = "\t", row.names = FALSE)
+write.table(m.52.s, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/mouse_52.genotyped.dist.tsv", sep = "\t", row.names = FALSE)
+```
+
+
+## Calculate threshold con FindThreshold
+
+```{r}
+
+threshold_output_m44 <- shazam::findThreshold(m.44.s$dist_nearest,
+                                  method = "gmm", model = "gamma-norm",
+                                  cutoff = "user", spc = 0.995)
+threshold_m44 <- threshold_output_m44@threshold
+threshold_m44
+```
+
+```{r}
+plot(threshold_output_m44, binwidth = 0.02, silent = T) +
+  theme(axis.title = element_text(size = 18))
+```
+
+
+```{r}
+threshold_output_m45 <- shazam::findThreshold(m.45.s$dist_nearest,
+                                  method = "gmm", model = "gamma-norm",
+                                  cutoff = "user", spc = 0.995)
+threshold45 <- threshold_output_m45@threshold
+threshold45
+```
+
+```{r}
+plot(threshold_output_m45, binwidth = 0.02, silent = T) +
+  theme(axis.title = element_text(size = 18))
+```
+
+```{r}
+threshold_output_m48 <- shazam::findThreshold(m.48.s$dist_nearest,
+                                  method = "gmm", model = "gamma-norm",
+                                  cutoff = "user", spc = 0.995)
+threshold48 <- threshold_output_m48@threshold
+threshold48
+
+plot(threshold_output_m45, binwidth = 0.02, silent = T) +
+  theme(axis.title = element_text(size = 18))
+```
+
+
+```{r}
+threshold_output_m49 <- shazam::findThreshold(m.49.s$dist_nearest,
+                                  method = "gmm", model = "gamma-norm",
+                                  cutoff = "user", spc = 0.995)
+threshold49 <- threshold_output_m49@threshold
+threshold49
+
+plot(threshold_output_m49, binwidth = 0.02, silent = T) +
+  theme(axis.title = element_text(size = 18))
+```
+
+```{r}
+threshold_output_m50 <- shazam::findThreshold(m.50.s$dist_nearest,
+                                  method = "gmm", model = "gamma-norm",
+                                  cutoff = "user", spc = 0.995)
+threshold50 <- threshold_output_m50@threshold
+threshold50
+
+plot(threshold_output_m50, binwidth = 0.02, silent = T) +
+  theme(axis.title = element_text(size = 18))
+```
+
+
+```{r}
+threshold_output_m52 <- shazam::findThreshold(m.52.s$dist_nearest,
+                                  method = "gmm", model = "gamma-norm",
+                                  cutoff = "user", spc = 0.995)
+threshold52 <- threshold_output_m52@threshold
+threshold52
+
+plot(threshold_output_m52, binwidth = 0.02, silent = T) +
+  theme(axis.title = element_text(size = 18))
+```
+
+## Spectral-based clonal clustering (SCOPer)
+
+Como no son bimodales, identificamos los clones por spectral clustering
+
+### mouse_44
+
+```{r}
+# Clonal assignment using identical nucleotide sequences
+m.44.scoper <- identicalClones(m.44.s, method="nt")
+m.44.scoper_db <- as.data.frame(m.44.scoper)
+```
+
+```{r}
+# Plot a histogram of inter clonal distances
+plot(m.44.scoper, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using hierarchical clustering
+results_m44 <- hierarchicalClones(m.44.s, threshold=0.15)
+```
+
+```{r}
+# Plot a histogram of inter and intra clonal distances
+plot(results_m44, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using the spectral clustering method novj
+results_m44b <- spectralClones(m.44.s, method="novj")
+# Plot a histogram of inter and intra clonal distances
+plot(results_m44b, binwidth=0.02)
+```
+
+### mouse_45
+
+```{r}
+# Clonal assignment using identical nucleotide sequences
+m.45.scoper <- identicalClones(m.45.s, method="nt")
+m.45.scoper_db <- as.data.frame(m.45.scoper)
+```
+
+```{r}
+# Plot a histogram of inter clonal distances
+plot(m.45.scoper, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using hierarchical clustering
+results_m45 <- hierarchicalClones(m.45.s, threshold=0.15)
+```
+
+```{r}
+# Plot a histogram of inter and intra clonal distances
+plot(results_m45, binwidth=0.02)
+```
+
+Este no lo usamos porque findhthrehold si que ha funcionado en este
+
+```{r}
+# Clonal assignment using the spectral clustering method novj
+results_m45b <- spectralClones(m.45.s, method="novj")
+# Plot a histogram of inter and intra clonal distances
+plot(results_m45b, binwidth=0.02)
+```
+
+### Mouse_48
+
+```{r}
+# Clonal assignment using identical nucleotide sequences
+m.48.scoper <- identicalClones(m.48.s, method="nt")
+m.48.scoper_db <- as.data.frame(m.48.scoper)
+```
+
+```{r}
+# Plot a histogram of inter clonal distances
+plot(m.48.scoper, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using hierarchical clustering
+results_m48 <- hierarchicalClones(m.48.s, threshold=0.15)
+```
+
+```{r}
+# Plot a histogram of inter and intra clonal distances
+plot(results_m48, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using the spectral clustering method novj
+results_m48b <- spectralClones(m.48.s, method="novj")
+# Plot a histogram of inter and intra clonal distances
+plot(results_m48b, binwidth=0.02)
+```
+
+### Mouse_49
+
+```{r}
+# Clonal assignment using identical nucleotide sequences
+m.49.scoper <- identicalClones(m.49.s, method="nt")
+m.49.scoper_db <- as.data.frame(m.49.scoper)
+```
+
+```{r}
+# Plot a histogram of inter clonal distances
+plot(m.49.scoper, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using hierarchical clustering
+results_m49 <- hierarchicalClones(m.49.s, threshold=0.15)
+```
+
+```{r}
+# Plot a histogram of inter and intra clonal distances
+plot(results_m49, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using the spectral clustering method novj
+results_m49b <- spectralClones(m.49.s, method="novj")
+# Plot a histogram of inter and intra clonal distances
+plot(results_m49b, binwidth=0.02)
+```
+
+### Mouse_50
+
+```{r}
+# Clonal assignment using identical nucleotide sequences
+m.50.scoper <- identicalClones(m.50.s, method="nt")
+m.50.scoper_db <- as.data.frame(m.50.scoper)
+```
+
+```{r}
+# Plot a histogram of inter clonal distances
+plot(m.50.scoper, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using hierarchical clustering
+results_m50 <- hierarchicalClones(m.50.s, threshold=0.15)
+```
+
+```{r}
+# Plot a histogram of inter and intra clonal distances
+plot(results_m50, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using the spectral clustering method novj
+results_m50b <- spectralClones(m.50.s, method="novj")
+# Plot a histogram of inter and intra clonal distances
+plot(results_m50b, binwidth=0.02)
+```
+
+### Mouse_52
+
+```{r}
+# Clonal assignment using identical nucleotide sequences
+m.52.scoper <- identicalClones(m.52.s, method="nt")
+m.52.scoper_db <- as.data.frame(m.52.scoper)
+```
+
+```{r}
+# Plot a histogram of inter clonal distances
+plot(m.52.scoper, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using hierarchical clustering
+results_m52 <- hierarchicalClones(m.52.s, threshold=0.15)
+```
+
+```{r}
+# Plot a histogram of inter and intra clonal distances
+plot(results_m52, binwidth=0.02)
+```
+
+```{r}
+# Clonal assignment using the spectral clustering method novj
+results_m52b <- spectralClones(m.52.s, method="novj")
+# Plot a histogram of inter and intra clonal distances
+plot(results_m52b, binwidth=0.02)
+```
+
+```{r}
+# individual threshold con findThreshold
+thr44 <- 0.0697
+thr45 <- 0.0353
+thr48 <- 0.0274
+thr49 <- 0.1111
+thr50 <- 0.0633
+thr52 <- 0.1224
+mean_find <- mean(c(0.0697,0.0353,0.0274,0.1111,0.0633,0.1224))
+median_find <- median(c(0.0697,0.0353,0.0274,0.1111,0.0633,0.1224))
+mean_find
+median_find
+```
+
+No me fio de estos resultados, no parecen dividir las montañas. Sin embargo, el findthreshold ha sido capaz de entoncontrar un umbral al que cortar la jerarquía. 
+
+```{r}
+# individual threshold con spectral clones
+thr44 <- 0.18
+thr45 <- 0.19 #del findhthrehold
+thr48 <- 0.15 #deducido, no lo encuentra
+thr49 <- 0.31
+thr50 <- 0.3
+thr52 <- 0.3
+mean_spectral <- mean(c(0.18,0.19,0.15,0.31,0.3,0.3))
+median_spectral <- median(c(0.18,0.19,0.15,0.31,0.3,0.3))
+mean_spectral
+median_spectral
+```
+
+```{r}
+results_m44b <- as.data.frame(results_m44b)
+results_m45b <- as.data.frame(results_m45b)
+results_m48b <- as.data.frame(results_m48b)
+results_m49b <- as.data.frame(results_m49b)
+results_m50b <- as.data.frame(results_m50b)
+results_m52b <- as.data.frame(results_m52b)
+```
+
+Sin embargo, con el spectral clones, no hemos sido capaces de encontrar un threshold para el mouse_48 (pocas células).
+
+## Altogether
+
+The nearest-neighbor distance distribution is not always bimodal. In this case, if the data have multiple subjects, we can calculate the nearest neighbor distances across subjects to initialize the Gaussian fit parameters of the nearest-neighbor distance of inter (between) clones distribution. 
+
+The nearest neighbor distances across subjects can be calculated by specifying the parameter `cross` in the function `distToNearest`. And then when we call function `findThreshold`, Gaussian fit parameters can be initialized by setting parameter `cross = dist_crossSubj$cross_dist_nearest`.
+
+In the above data, there are 6 subjects. We will want to make make sure that the cross subject `distToNearest` values are valid. To calculate this do the following:
+
+```{r}
+m.44.s$subject <- "mouse_44"
+m.45.s$subject <- "mouse_45"
+m.48.s$subject <- "mouse_48"
+m.49.s$subject <- "mouse_49"
+m.50.s$subject <- "mouse_50"
+m.52.s$subject <- "mouse_52"
+```
+
+```{r}
+all_mice_analysis <- rbind(m.44.s, m.45.s, m.48.s, m.49.s, m.50.s, m.52.s)
+```
+
+```{r}
+#son lo mismo
+#Use genotyped V assignments, Hamming distance, and normalize by junction length
+dist_nearest <- distToNearest(filter(all_mice_analysis, locus == "IGH"), nproc = 1,model="ham", normalize ="len",vCallColumn = "v_call_genotyped") #lo mismo que distToNearest(all_mice_analysis)
+dist_nearest <- distToNearest(all_mice_analysis,nproc = 1,model="ham", normalize ="len",vCallColumn = "v_call_genotyped")
+# calculate cross subjects distribution of distance to nearest
+dist_crossSubj <- distToNearest(filter(all_mice_analysis, locus == "IGH"), 
+                                nproc = 1, cross = "subject")
+
+# find threshold for cloning automatically and initialize the Gaussian fit parameters of the nearest-neighbor 
+# distance of inter (between) clones using cross subjects distribution of distance to nearest
+threshold_output <- findThreshold(dist_nearest$dist_nearest, 
+                                  method = "gmm", model = "gamma-norm", 
+                                  cross = dist_crossSubj$cross_dist_nearest,
+                                  cutoff = "user", spc = 0.995)
+threshold <- threshold_output@threshold
+threshold
+```
+Este valor (0.05362) es similar a la mediana del conjunto de los thresholds por ratón indivual.
+
+# Plot de todos juntos
+
+```{r}
+plot(threshold_output, binwidth = 0.02, 
+     cross = dist_crossSubj$cross_dist_nearest, silent = T) + 
+  theme(axis.title = element_text(size = 18))
+```
+
+#Si los hago por separado y saco la media y mediana
+
+```{r}
+# Lista para almacenar los umbrales
+thresholds <- c()
+
+# Iteración para cada ratón
+for (subject in c("mouse_45", "mouse_48", "mouse_49", "mouse_50", "mouse_52")) {
+    # Cálculo del umbral para cada ratón
+    dist_nearest <- distToNearest(dplyr::filter(all_mice_analysis, locus == "IGH", subject == subject))
+    threshold_output <- findThreshold(dist_nearest$dist_nearest, method = "gmm", model = "gamma-norm", cutoff = "user", spc = 0.995)
+    threshold <- threshold_output@threshold
+    
+    # Almacenar el umbral en la lista
+    thresholds <- c(thresholds, threshold)
+}
+
+# Calcular la media y la mediana de los umbrales
+mean_threshold <- mean(thresholds)
+median_threshold <- median(thresholds)
+
+# Mostrar los resultados
+mean_threshold
+median_threshold
+```
+
+
+# Si hacemos la asignación clonal con Scoper
+
+```{r}
+# call clones using hierarchicalClones
+results <- hierarchicalClones(all_mice_analysis,
+                              cell_id = "cell_id",
+                              threshold = 0.05357612,
+                              method="nt",
+                              only_heavy = TRUE, split_light = FALSE,
+                              summarize_clones = FALSE,
+                              fields = "subject")
+```
+
+Como hemos eliminado las cadenas ligeras, no las encuentra.
+
+
+# Exportar los datos.
+
+```{r}
+all_mice_genotyped <- airr::read_rearrangement('C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/02_Genotipado/all_mice_genotyped.tsv')
+```
+
+Esto no lo hemos hecho. La asignación clonal la hacemos con change-o en el cluster con los scripts DefineClones.py y CreateGermlines.py
+
+
+```{r}
+thr_spectr <- spectralClones(all_mice_genotyped, method="novj")
+# Plot a histogram of inter and intra clonal distances
+plot(thr_spectr, binwidth=0.02)
+```
+
+```{r}
+# call clones using hierarchicalClones 
+All_mice_clustering <- hierarchicalClones(all_mice_genotyped, cell_id = 'cell_id', 
+                              threshold = 0.28, only_heavy = TRUE, 
+                              split_light = FALSE, summarize_clones = FALSE)
+```
+
+```{r}
+# calculate and plot the rank-abundance curve
+plot(estimateAbundance(All_mice_clustering), colors = "steelblue", silent = T) + 
+  theme(axis.title = element_text(size = 18))
+```
+
+
+```{r}
+# call clones using hierarchicalClones 
+All_mice_clustering2 <- hierarchicalClones(all_mice_analysis, cell_id = 'cell_id', 
+                              threshold = 0.053, only_heavy = TRUE, 
+                              split_light = FALSE, summarize_clones = FALSE)
+```
+
+```{r}
+# calculate and plot the rank-abundance curve
+plot(estimateAbundance(All_mice_clustering2), colors = "steelblue", silent = T) + 
+  theme(axis.title = element_text(size = 18))
+```
+
+
+```{r}
+write.table(All_mice_clustering, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/03_Clonal_diversity/All_mice_clusteringt.tsv", sep = "\t", row.names = FALSE)
+```
+
+
+```{r}
+write.table(results_m44b, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/03_Clonal_diversity/m44_clonal_assgiment.tsv", sep = "\t", row.names = FALSE)
+write.table(results_m45b, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/03_Clonal_diversity/m45_clonal_assgiment.tsv", sep = "\t", row.names = FALSE)
+write.table(results_m48b, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/03_Clonal_diversity/m48_clonal_assgiment.tsv", sep = "\t", row.names = FALSE)
+write.table(results_m49b, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/03_Clonal_diversity/m49_clonal_assgiment.tsv", sep = "\t", row.names = FALSE)
+write.table(results_m50b, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/03_Clonal_diversity/m50_clonal_assgiment.tsv", sep = "\t", row.names = FALSE)
+write.table(results_m52b, "C:/Users/d940401/Desktop/Analisis_immcantation/Analisis_Enric/Datos_Enric/Datos_TFM/00_Datos_filtrados_slurm/03_Clonal_diversity/m52_clonal_assgiment.tsv", sep = "\t", row.names = FALSE)
+```
+
+El resto lo haremos en el cluster:
+
+```{r}
+# Create a data frame with the mouse numbers and threshold values
+#Esto para el clustering con ratones individuales
+predicted_thresholds <- data.frame(
+  mouse_nums = c("mouse_44", "mouse_45", "mouse_48", "mouse_49", "mouse_50", "mouse_52"),
+  thresholds = c(0.0697, 0.0353, 0.0274, 0.1111, 0.0633, 0.1224)
+)
+
+# Write the data frame to a CSV file
+write.csv(predicted_thresholds, "predicted_thresholds.csv", row.names = FALSE)
+```
+
+Lo haremos todo junto, ya que luego la asignación clonal no queda bien ( por ejemplo dos clones "1" con diferentes secuencias CDR3).
+
+
+
+
+
+
+
+
+
+
+
+
+

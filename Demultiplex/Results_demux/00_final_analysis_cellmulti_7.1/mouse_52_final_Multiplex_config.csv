@@ -1,0 +1,13 @@
+[gene-expression]
+reference,/home/evercher/TFM/mouse_gen_transcr/refdata-gex-mm10-2020-A
+force-cells,2480	
+check-library-compatibility,false
+
+[vdj] # For TCR and BCR libraries only
+reference, /home/evercher/TFM/mouse_gen_transcr/refdata-cellranger-vdj-GRCm38-alts-ensembl-7.0.0
+
+[libraries]
+fastq_id,fastqs,feature_types
+bamtofastq,/data/scratch/LAB/enric/TFM_enric/bamtofastq/mouse_52_fastq/demultiplexed_samples_0_1_AAC3CVFHV,Gene Expression
+TIB52-48-49_scRNAseq_VDJ,/data/scratch/LAB/tfm_enric_samples/TFM_FASTQ/TIB52-48-49_scRNAseq_VDJ,VDJ-B
+
