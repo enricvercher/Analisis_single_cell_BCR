@@ -1,7 +1,0 @@
-id,name,read,pattern,sequence,feature_type
-Hashtag1_Antibody,Hashtag1_Antibody,R2,5PNNNNNNNNNN(BC),ACCCACCAGTAAGAC, Multiplexing Capture
-Hashtag2_Antibody,Hashtag2_Antibody,R2,5PNNNNNNNNNN(BC),GGTCGAGAGCATTCA, Multiplexing Capture
-Hashtag3_Antibody,Hashtag3_Antibody,R2,5PNNNNNNNNNN(BC),CTTGCCGCATGTCAT, Multiplexing Capture
-Hashtag4_Antibody,Hashtag4_Antibody,R2,5PNNNNNNNNNN(BC),AAAGCATTCTTCACG, Multiplexing Capture
-Hashtag5_Antibody,Hashtag5_Antibody,R2,5PNNNNNNNNNN(BC),CTTTGTCTTTGTGAG, Multiplexing Capture
-Hashtag6_Antibody,Hashtag6_Antibody,R2,5PNNNNNNNNNN(BC),TATGCTGCCACGGTA, Multiplexing Capture

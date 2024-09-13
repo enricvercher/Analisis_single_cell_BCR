@@ -1,8 +1,0 @@
-source:  https://www.imgt.org/genedb
-date:    2023.11.02
-species:
-    - human:Homo+sapiens
-    - mouse:Mus
-    - rat:Rattus+norvegicus
-    - rabbit:Oryctolagus+cuniculus
-    - rhesus_monkey:Macaca+mulatta
