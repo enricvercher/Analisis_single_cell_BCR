@@ -29,3 +29,5 @@ __demultiplexed_samples*
 
 # Ignorar archivos generados por SLURM
 slurm*.out
+
+Analysis_repertoire_immcantation_nfcore/
