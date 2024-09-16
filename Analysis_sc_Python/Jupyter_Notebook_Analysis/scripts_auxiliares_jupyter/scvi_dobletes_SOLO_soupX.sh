@@ -13,21 +13,25 @@ module load singularity/3.4.1
 
 # Definir las rutas a los archivos preprocesados
 INPUT_FILES=(
-    "/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/predicciones_dobletes/process_for_doublets/Mouse_44_preprocessed_SoupX.h5ad"
-    "/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/predicciones_dobletes/process_for_doublets/Mouse_45_preprocessed_SoupX.h5ad"
-    "/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/predicciones_dobletes/process_for_doublets/Mouse_48_preprocessed_SoupX.h5ad"
-    "/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/predicciones_dobletes/process_for_doublets/Mouse_49_preprocessed_SoupX.h5ad"
-    "/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/predicciones_dobletes/process_for_doublets/Mouse_50_preprocessed_SoupX.h5ad"
-    "/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/predicciones_dobletes/process_for_doublets/Mouse_52_preprocessed_SoupX.h5ad"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/filtered_matrices/PT_14_filtered.h5ad"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/filtered_matrices/PT_17_filtered.h5ad"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/filtered_matrices/PT_20_filtered.h5ad"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/filtered_matrices/PT_22_filtered.h5ad"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/filtered_matrices/PT_28_filtered.h5ad"
+    )
+
+PATIENTS_NAMES=("PT_14"
+"PT_17"
+"PT_20"
+"PT_22"
+"PT_28"
 )
 
-MOUSE_NAMES=("Mouse_44" "Mouse_45" "Mouse_48" "Mouse_49" "Mouse_50" "Mouse_52")
-
 INPUT_FILE=${INPUT_FILES[$SLURM_ARRAY_TASK_ID]}
-MOUSE_NAME=${MOUSE_NAMES[$SLURM_ARRAY_TASK_ID]}
+PATIENTS_NAMES=${PATIENTS_NAMES[$SLURM_ARRAY_TASK_ID]}
 
-OUTPUT_MODEL_DIR="/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/modelos/modelos_solo/${MOUSE_NAME}"
-OUTPUT_PREDICTION_DIR="/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/predicciones_dobletes/${MOUSE_NAME}"
+OUTPUT_MODEL_DIR="/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/modelos/modelos_solo/${PATIENTS_NAMES}"
+OUTPUT_PREDICTION_DIR="/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/predicciones_dobletes/${PATIENTS_NAMES}"
 
 # Crear los directorios de salida si no existen
 mkdir -p $OUTPUT_MODEL_DIR
