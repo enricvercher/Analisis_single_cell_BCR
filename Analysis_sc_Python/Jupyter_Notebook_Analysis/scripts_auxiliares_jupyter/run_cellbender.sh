@@ -18,11 +18,11 @@ mkdir -p "$output_dir"
 
 # Rutas de los archivos sin filtrar proporcionados por CellRanger
 raw_files=(
-    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_14-final/outs/multi/count/raw_feature_bc_matrix.h5"
-    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_17-final/outs/multi/count/raw_feature_bc_matrix.h5"
-    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_20-final/outs/multi/count/raw_feature_bc_matrix.h5"
-    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_22-final/outs/multi/count/raw_feature_bc_matrix.h5"
-    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_28-final/outs/multi/count/raw_feature_bc_matrix.h5"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_14-final_2/outs/multi/count/raw_feature_bc_matrix.h5"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_17-final_2/outs/multi/count/raw_feature_bc_matrix.h5"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_20-final_2/outs/multi/count/raw_feature_bc_matrix.h5"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_22-final_2/outs/multi/count/raw_feature_bc_matrix.h5"
+    "/data/scratch/LAB/enric/Proyecto_pitagoras/PT_28-final_2/outs/multi/count/raw_feature_bc_matrix.h5"
 )
 
 # Nombres base para los ratones
