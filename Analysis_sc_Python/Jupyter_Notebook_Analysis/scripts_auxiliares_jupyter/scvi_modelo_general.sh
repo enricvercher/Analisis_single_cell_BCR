@@ -1,18 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=training_solo_combined_array
 #SBATCH --partition=gpu_a100
-#SBATCH --cpus-per-task=12
+#SBATCH --cores-per-socket=5
+#SBATCH --cpus-per-task=5
 #SBATCH --gpus=a100:1
-#SBATCH --mem=64G
+#SBATCH --mem=20G
 #SBATCH --time=3-00:00:00
-#SBATCH --output=/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/modelos/modelo_general.log        
+#SBATCH --output=/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/modelos/modelo_general_scvi/modelo_general.log        
 
 # Cargar el módulo de Singularity
 module load singularity/3.4.1
 
 # Definir las rutas
-INPUT_PATH="/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/processed_data/adata_mixto_processed.h5ad"
-OUTPUT_DIR="/data/scratch/LAB/enric/TFM_enric/03_Analisis_scRNAseq_python/modelos/modelo_general_scvi"
+INPUT_PATH="/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/processed_data/adata_mixto_processed.h5ad"
+OUTPUT_DIR="/data/scratch/LAB/enric/Proyecto_pitagoras/Analisis_pitagoras/Results/modelos/modelo_general_scvi"
 CONTAINER_PATH="/data/scratch/LAB/enric/TFM_enric/Contenedores/scvi-tools.sif"  
 
 # Crear el directorio de salida
