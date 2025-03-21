@@ -31,3 +31,7 @@ __demultiplexed_samples*
 slurm*.out
 
 Analysis_repertoire_immcantation_nfcore/
+
+# Ignore development folders
+Analysis_sc_Python/
+.vscode/
